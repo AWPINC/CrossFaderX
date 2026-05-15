@@ -1,4 +1,5 @@
 let audioCtx;
+let masterGainNode; // Общий узел громкости
 let tracks = [];
 let isPlaying = false;
 let currentMode = 'play';
@@ -16,18 +17,30 @@ const fadeTimeInput = document.getElementById('fade-time');
 const globalProgressContainer = document.getElementById('global-progress-container');
 const globalProgressFill = document.getElementById('global-progress-fill');
 const globalPlayhead = document.getElementById('global-playhead');
+
 const modePlayBtn = document.getElementById('mode-play');
 const modeManageBtn = document.getElementById('mode-manage');
+
+// Сменяющиеся элементы
 const gridSettings = document.getElementById('grid-settings');
 const columnInput = document.getElementById('column-count');
 const columnVal = document.getElementById('column-val');
+const volumeSettings = document.getElementById('volume-settings');
+const volumeInput = document.getElementById('master-volume');
+const volumeVal = document.getElementById('volume-val');
 
 // --- 1. ЗАГРУЗКА И ПОДГОТОВКА ---
 fileUpload.addEventListener('change', function(event) {
     const files = Array.from(event.target.files);
     if (files.length === 0) return;
 
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        // Создаем мастер-громкость и подключаем к выходу
+        masterGainNode = audioCtx.createGain();
+        masterGainNode.connect(audioCtx.destination);
+        masterGainNode.gain.value = parseFloat(volumeInput.value);
+    }
     
     cleanupSession();
     
@@ -43,8 +56,10 @@ fileUpload.addEventListener('change', function(event) {
 
         const trackSource = audioCtx.createMediaElementSource(audioEl);
         const gainNode = audioCtx.createGain();
+        
+        // Подключаем: Источник -> Локальная громкость -> Мастер громкость
         trackSource.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
+        gainNode.connect(masterGainNode);
 
         const isFirst = i === 0;
         gainNode.gain.value = isFirst ? 1.0 : 0.0;
@@ -202,7 +217,7 @@ function updateUI() {
     animationId = requestAnimationFrame(updateUI);
 }
 
-// --- 5. ПЕРЕМОТКА (SEEKING) ---
+// --- 5. ПЕРЕМОТКА (СИНХРОННЫЙ SEEKING) ---
 globalProgressContainer.addEventListener('click', (e) => {
     if (tracks.length === 0 || globalDuration === 0) return;
     const rect = globalProgressContainer.getBoundingClientRect();
@@ -210,15 +225,26 @@ globalProgressContainer.addEventListener('click', (e) => {
     const percentage = Math.max(0, Math.min(1, clickX / rect.width));
     const newTime = percentage * globalDuration;
     
-    // Синхронное обновление в быстром цикле
+    // ВАЖНО: Чтобы избежать рассинхрона, ставим на паузу
+    const wasPlaying = isPlaying;
+    if (wasPlaying) {
+        tracks.forEach(t => t.audioElement.pause());
+    }
+    
+    // Перематываем в тишине
     for (let i = 0; i < tracks.length; i++) {
         tracks[i].audioElement.currentTime = newTime;
+    }
+    
+    // Запускаем одновременно, если до этого играло
+    if (wasPlaying) {
+        tracks.forEach(t => t.audioElement.play());
     }
     
     updateUI(); 
 });
 
-// --- 6. РЕЖИМЫ И УПРАВЛЕНИЕ СЕТКОЙ ---
+// --- 6. РЕЖИМЫ И НАСТРОЙКИ (МАСТЕР ГРОМКОСТЬ / СЕТКА) ---
 modePlayBtn.addEventListener('click', () => setMode('play'));
 modeManageBtn.addEventListener('click', () => setMode('manage'));
 
@@ -227,6 +253,8 @@ function setMode(mode) {
     modePlayBtn.classList.toggle('active', mode === 'play');
     modeManageBtn.classList.toggle('active', mode === 'manage');
     
+    // Сменяем ползунки внутри фиксированного блока
+    volumeSettings.style.display = (mode === 'play') ? 'flex' : 'none';
     gridSettings.style.display = (mode === 'manage') ? 'flex' : 'none';
     
     tracks.forEach(t => {
@@ -240,6 +268,16 @@ function setMode(mode) {
     });
 }
 
+// Управление мастер громкостью
+volumeInput.addEventListener('input', (e) => {
+    const val = parseFloat(e.target.value);
+    volumeVal.textContent = `${Math.round(val * 100)}%`;
+    if (masterGainNode) {
+        masterGainNode.gain.value = val;
+    }
+});
+
+// Управление колонками
 columnInput.addEventListener('input', (e) => {
     const val = e.target.value;
     columnVal.textContent = val;

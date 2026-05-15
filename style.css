@@ -5,18 +5,18 @@ body { background-color: #1e1e1e; color: #ffffff; padding: 20px; }
 
 .control-panel {
     display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;
-    background-color: #2d2d2d; padding: 15px 20px; border-radius: 10px; margin-bottom: 20px;
+    background-color: #2d2d2d; padding: 15px 20px; border-radius: 13px; margin-bottom: 20px;
 }
 
 input[type="file"] { display: none; }
 .custom-file-upload {
-    background-color: #4CAF50; color: white; padding: 10px 15px; border-radius: 5px; cursor: pointer; font-weight: bold;
+    background-color: #4CAF50; color: white; padding: 10px 15px; border-radius: 13px; cursor: pointer; font-weight: bold;
 }
 
 /* Транспортные кнопки */
 .transport-controls { display: flex; gap: 10px; }
 .transport-btn {
-    padding: 10px 20px; border-radius: 5px; font-weight: bold; border: none; cursor: pointer; color: white; transition: 0.3s;
+    padding: 10px 20px; border-radius: 13px; font-weight: bold; border: none; cursor: pointer; color: white; transition: 0.3s;
 }
 .transport-btn:disabled { background-color: #555 !important; color: #888; cursor: not-allowed; }
 .transport-btn.play { background-color: #4CAF50; }
@@ -24,26 +24,69 @@ input[type="file"] { display: none; }
 .transport-btn.stop { background-color: #f44336; }
 
 .input-group { display: flex; align-items: center; gap: 10px; }
-.input-group input[type="number"] { width: 60px; padding: 5px; background: #333; color: white; border: 1px solid #555; }
+.input-group input[type="number"] { width: 60px; padding: 8px; background: #333; color: white; border: 1px solid #555; border-radius: 13px;}
+
+/* Контейнер для сменяющихся ползунков, чтобы избежать скачков интерфейса */
+.dynamic-slider-container {
+    width: 250px;
+    display: flex;
+    justify-content: center;
+    padding: 0 15px;
+}
+
+.dynamic-slider-container input[type="range"] {
+    width: 100px;
+    cursor: pointer;
+}
+
+/* Цвет ползунка громкости (Режим "Слушать") */
+#master-volume {
+    accent-color: #4CAF50; /* Зеленый цвет, как у кнопки Play */
+}
+
+/* Цвет ползунка колонок (Режим "Двигать") */
+#column-count {
+    accent-color: #2196F3; /* Синий цвет, как у активной кнопки режима */
+}
+
+/* Общие стили для текста значений ползунков */
+#column-val, #volume-val { 
+    font-weight: bold; 
+    min-width: 45px; /* Чуть увеличил ширину, чтобы 100% не дергалось */
+    text-align: right; 
+}
+
+/* Цвет процентов громкости (Зеленый) */
+#volume-val { 
+    color: #4CAF50; 
+}
+
+/* Цвет количества колонок (Синий) */
+#column-val { 
+    color: #2196F3; 
+}
 
 /* Переключатель режимов */
-.mode-switch { display: flex; border: 1px solid #555; border-radius: 5px; overflow: hidden; }
+.mode-switch { display: flex; border: 1px solid #555; border-radius: 13px; overflow: hidden; }
 .mode-btn { padding: 8px 15px; background: #333; color: white; border: none; cursor: pointer; }
-.mode-btn.active { background: #2196F3; }
 
-/* Настройки сетки в хедере */
-#grid-settings { display: flex; align-items: center; gap: 10px; }
-#column-count { cursor: pointer; width: 100px; }
-#column-val { font-weight: bold; color: #2196F3; min-width: 20px; }
+/* Индивидуальные цвета для активных режимов */
+#mode-play.active { 
+    background: #4CAF50; /* Зеленый для режима "Слушать" */
+}
+
+#mode-manage.active { 
+    background: #2196F3; /* Синий для режима "Двигать" */
+}
 
 /* Главный прогресс-бар */
 .global-progress {
-    position: relative; width: 100%; height: 20px; background: #222; border-radius: 10px; margin-bottom: 20px; 
+    position: relative; width: 100%; height: 20px; background: #222; border-radius: 13px; margin-bottom: 20px; 
     cursor: pointer; border: 1px solid #444; display: flex; align-items: center; transition: height 0.2s ease;
 }
 .global-progress:hover { height: 28px; }
 .progress-fill {
-    position: absolute; left: 0; top: 0; height: 100%; background: #4CAF50; border-radius: 10px; width: 0%; pointer-events: none;
+    position: absolute; left: 0; top: 0; height: 100%; background: #4CAF50; border-radius: 13px; width: 0%; pointer-events: none;
 }
 .progress-knob {
     position: absolute; top: 50%; left: 0%; transform: translate(-50%, -50%); 
@@ -65,7 +108,7 @@ input[type="file"] { display: none; }
 
 /* Кнопка трека */
 .track-btn {
-    position: relative; background-color: #222; color: white; border: 2px solid #444; border-radius: 8px; 
+    position: relative; background-color: #222; color: white; border: 2px solid #444; border-radius: 13px; 
     height: 80px; cursor: pointer; overflow: hidden; transition: border-color 0.2s; user-select: none;
 }
 .track-btn.active { border-color: #4CAF50; }
