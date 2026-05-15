@@ -18,6 +18,9 @@ const globalProgressFill = document.getElementById('global-progress-fill');
 const globalPlayhead = document.getElementById('global-playhead');
 const modePlayBtn = document.getElementById('mode-play');
 const modeManageBtn = document.getElementById('mode-manage');
+const gridSettings = document.getElementById('grid-settings');
+const columnInput = document.getElementById('column-count');
+const columnVal = document.getElementById('column-val');
 
 // --- 1. ЗАГРУЗКА И ПОДГОТОВКА ---
 fileUpload.addEventListener('change', function(event) {
@@ -32,7 +35,6 @@ fileUpload.addEventListener('change', function(event) {
         const fileUrl = URL.createObjectURL(file);
         const audioEl = new Audio(fileUrl);
         
-        // Получаем длину трека (берем по первому файлу)
         if (i === 0) {
             audioEl.addEventListener('loadedmetadata', () => {
                 globalDuration = audioEl.duration;
@@ -47,7 +49,6 @@ fileUpload.addEventListener('change', function(event) {
         const isFirst = i === 0;
         gainNode.gain.value = isFirst ? 1.0 : 0.0;
 
-        // Создаем UI
         const btn = document.createElement('div');
         btn.className = `track-btn ${isFirst ? 'active' : ''}`;
         btn.dataset.index = i;
@@ -107,7 +108,15 @@ playPauseBtn.addEventListener('click', () => {
     if (audioCtx.state === 'suspended') audioCtx.resume();
 
     if (!isPlaying) {
-        tracks.forEach(t => t.audioElement.play());
+        // Принудительная синхронизация по первому треку при старте
+        if (tracks.length > 0) {
+            const syncTime = tracks[0].audioElement.currentTime;
+            tracks.forEach(t => {
+                t.audioElement.currentTime = syncTime;
+                t.audioElement.play();
+            });
+        }
+        
         isPlaying = true;
         playPauseBtn.textContent = "Pause";
         playPauseBtn.className = "transport-btn pause";
@@ -173,7 +182,6 @@ function updateUI() {
         const currentTime = tracks[0].audioElement.currentTime;
         const progressPercent = (currentTime / globalDuration) * 100;
         
-        // Движение ползунка
         globalPlayhead.style.left = `${progressPercent}%`;
         globalProgressFill.style.width = `${progressPercent}%`;
 
@@ -183,14 +191,12 @@ function updateUI() {
             }
         });
 
-        // Состояние кнопки Stop
         if (currentTime > 0) {
             stopBtn.disabled = false;
         } else {
             stopBtn.disabled = true;
         }
 
-        // Авто-стоп в конце
         if (currentTime >= globalDuration) stopBtn.click();
     }
     animationId = requestAnimationFrame(updateUI);
@@ -201,16 +207,18 @@ globalProgressContainer.addEventListener('click', (e) => {
     if (tracks.length === 0 || globalDuration === 0) return;
     const rect = globalProgressContainer.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
-    const percentage = clickX / rect.width;
-    
+    const percentage = Math.max(0, Math.min(1, clickX / rect.width));
     const newTime = percentage * globalDuration;
-    tracks.forEach(t => t.audioElement.currentTime = newTime);
     
-    // Мгновенно обновляем графику при клике
+    // Синхронное обновление в быстром цикле
+    for (let i = 0; i < tracks.length; i++) {
+        tracks[i].audioElement.currentTime = newTime;
+    }
+    
     updateUI(); 
 });
 
-// --- 6. РЕЖИМЫ И DRAG & DROP ---
+// --- 6. РЕЖИМЫ И УПРАВЛЕНИЕ СЕТКОЙ ---
 modePlayBtn.addEventListener('click', () => setMode('play'));
 modeManageBtn.addEventListener('click', () => setMode('manage'));
 
@@ -219,13 +227,26 @@ function setMode(mode) {
     modePlayBtn.classList.toggle('active', mode === 'play');
     modeManageBtn.classList.toggle('active', mode === 'manage');
     
+    gridSettings.style.display = (mode === 'manage') ? 'flex' : 'none';
+    
     tracks.forEach(t => {
         t.uiElement.draggable = (mode === 'manage');
-        if (mode === 'manage') t.uiElement.classList.add('draggable');
-        else t.uiElement.classList.remove('draggable');
+        if (mode === 'manage') {
+            t.uiElement.classList.add('draggable');
+        } else {
+            t.uiElement.classList.remove('draggable');
+            t.uiElement.classList.remove('dragging');
+        }
     });
 }
 
+columnInput.addEventListener('input', (e) => {
+    const val = e.target.value;
+    columnVal.textContent = val;
+    trackContainer.style.setProperty('--grid-cols', val);
+});
+
+// --- 7. DRAG & DROP ---
 let draggedItem = null;
 
 function setupDragAndDrop(element) {

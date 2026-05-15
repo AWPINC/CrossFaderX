@@ -28,6 +28,12 @@
                 <button id="mode-play" class="mode-btn active">Слушать</button>
                 <button id="mode-manage" class="mode-btn">Двигать</button>
             </div>
+
+            <div id="grid-settings" class="input-group" style="display: none; border-left: 1px solid #555; padding-left: 15px;">
+                <label for="column-count">Колонки:</label>
+                <input type="range" id="column-count" min="1" max="10" value="4">
+                <span id="column-val">4</span>
+            </div>
         </header>
 
         <div id="global-progress-container" class="global-progress">
