@@ -1,78 +1,142 @@
 let audioCtx;
 let tracks = [];
 let isPlaying = false;
+let currentMode = 'play';
+let activeTrackIndex = 0;
 let lastTime = 0;
+let animationId;
+let globalDuration = 0;
 
+// DOM Элементы
 const fileUpload = document.getElementById('file-upload');
 const trackContainer = document.getElementById('track-container');
-const masterBtn = document.getElementById('master-btn');
+const playPauseBtn = document.getElementById('play-pause-btn');
+const stopBtn = document.getElementById('stop-btn');
 const fadeTimeInput = document.getElementById('fade-time');
+const globalProgressContainer = document.getElementById('global-progress-container');
+const globalProgressFill = document.getElementById('global-progress-fill');
+const globalPlayhead = document.getElementById('global-playhead');
+const modePlayBtn = document.getElementById('mode-play');
+const modeManageBtn = document.getElementById('mode-manage');
 
-// 1. Обработка загрузки файлов
+// --- 1. ЗАГРУЗКА И ПОДГОТОВКА ---
 fileUpload.addEventListener('change', function(event) {
     const files = Array.from(event.target.files);
     if (files.length === 0) return;
 
-    // Инициализируем аудиоконтекст при первом взаимодействии пользователя
-    if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-
-    // Очищаем предыдущие треки, если они были
-    tracks.forEach(t => {
-        t.audioElement.pause();
-        URL.revokeObjectURL(t.audioElement.src); // Освобождаем оперативную память
-    });
-    tracks = [];
-    trackContainer.innerHTML = '';
-
-    files.forEach((file, index) => {
-        // Создаем временную ссылку на локальный файл
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
+    cleanupSession();
+    
+    files.forEach((file, i) => {
         const fileUrl = URL.createObjectURL(file);
-        
         const audioEl = new Audio(fileUrl);
-        audioEl.loop = true; // Зацикливаем трек
+        
+        // Получаем длину трека (берем по первому файлу)
+        if (i === 0) {
+            audioEl.addEventListener('loadedmetadata', () => {
+                globalDuration = audioEl.duration;
+            });
+        }
 
-        // Создаем узел контроля громкости (GainNode)
         const trackSource = audioCtx.createMediaElementSource(audioEl);
         const gainNode = audioCtx.createGain();
-        
-        // Подключаем: Аудио файл -> Громкость -> Выход (колонки)
         trackSource.connect(gainNode);
         gainNode.connect(audioCtx.destination);
 
-        // Изначально все треки на 0 громкости, кроме первого
-        const isFirst = index === 0;
-        const initialVol = isFirst ? 1.0 : 0.0;
-        gainNode.gain.value = initialVol;
+        const isFirst = i === 0;
+        gainNode.gain.value = isFirst ? 1.0 : 0.0;
 
-        // Создаем кнопку в интерфейсе
-        const btn = document.createElement('button');
+        // Создаем UI
+        const btn = document.createElement('div');
         btn.className = `track-btn ${isFirst ? 'active' : ''}`;
-        btn.innerHTML = `<span>${file.name}</span>`;
-        // Устанавливаем начальную заливку цветом (CSS переменная)
-        btn.style.setProperty('--vol', `${initialVol * 100}%`);
+        btn.dataset.index = i;
         
-        btn.addEventListener('click', () => switchTrack(index));
+        const trackPlayhead = document.createElement('div');
+        trackPlayhead.className = 'track-playhead';
+        
+        const title = document.createElement('div');
+        title.className = 'track-title';
+        title.textContent = file.name;
+
+        btn.appendChild(trackPlayhead);
+        btn.appendChild(title);
+        
+        btn.style.setProperty('--vol', `${(isFirst ? 1 : 0) * 100}%`);
         trackContainer.appendChild(btn);
 
-        // Сохраняем объект трека в наш массив
+        btn.addEventListener('click', () => {
+            if (currentMode === 'play') switchTrack(i);
+        });
+
         tracks.push({
+            id: i,
             audioElement: audioEl,
             gainNode: gainNode,
             uiElement: btn,
-            currentVolume: initialVol,
-            targetVolume: initialVol
+            localPlayhead: trackPlayhead,
+            currentVolume: isFirst ? 1.0 : 0.0,
+            targetVolume: isFirst ? 1.0 : 0.0
         });
+        
+        setupDragAndDrop(btn);
     });
 
-    masterBtn.disabled = false;
+    playPauseBtn.disabled = false;
+    playPauseBtn.textContent = "Play";
+    playPauseBtn.className = "transport-btn play";
+    activeTrackIndex = 0;
+    
+    requestAnimationFrame(updateUI);
 });
 
-// 2. Логика переключения треков (Установка Target Volume)
+function cleanupSession() {
+    tracks.forEach(t => {
+        t.audioElement.pause();
+        URL.revokeObjectURL(t.audioElement.src);
+    });
+    tracks = [];
+    trackContainer.innerHTML = '';
+    globalPlayhead.style.left = '0%';
+    globalProgressFill.style.width = '0%';
+    cancelAnimationFrame(animationId);
+}
+
+// --- 2. ТРАНСПОРТ (PLAY/PAUSE/STOP) ---
+playPauseBtn.addEventListener('click', () => {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+
+    if (!isPlaying) {
+        tracks.forEach(t => t.audioElement.play());
+        isPlaying = true;
+        playPauseBtn.textContent = "Pause";
+        playPauseBtn.className = "transport-btn pause";
+        lastTime = performance.now();
+        requestAnimationFrame(updateVolumes);
+    } else {
+        tracks.forEach(t => t.audioElement.pause());
+        isPlaying = false;
+        playPauseBtn.textContent = "Play";
+        playPauseBtn.className = "transport-btn play";
+    }
+});
+
+stopBtn.addEventListener('click', () => {
+    tracks.forEach(t => {
+        t.audioElement.pause();
+        t.audioElement.currentTime = 0;
+    });
+    isPlaying = false;
+    playPauseBtn.textContent = "Play";
+    playPauseBtn.className = "transport-btn play";
+    updateUI();
+});
+
+// --- 3. МИКШИРОВАНИЕ ---
 function switchTrack(selectedIndex) {
-    tracks.forEach((track, index) => {
-        if (index === selectedIndex) {
+    activeTrackIndex = selectedIndex;
+    tracks.forEach(track => {
+        if (track.id === selectedIndex) {
             track.targetVolume = 1.0;
             track.uiElement.classList.add('active');
         } else {
@@ -82,57 +146,124 @@ function switchTrack(selectedIndex) {
     });
 }
 
-// 3. Математика плавного перехода (Вызывается каждый кадр)
 function updateVolumes(currentTime) {
     if (!lastTime) lastTime = currentTime;
-    // Считаем дельту времени (сколько секунд прошло с прошлого кадра)
     const deltaTime = (currentTime - lastTime) / 1000;
     lastTime = currentTime;
 
     const fadeTime = parseFloat(fadeTimeInput.value) || 2.0;
-    const speed = 1.0 / fadeTime; // Скорость изменения (громкость в секунду)
+    const speed = 1.0 / fadeTime;
 
     tracks.forEach(track => {
         if (track.currentVolume < track.targetVolume) {
-            track.currentVolume += speed * deltaTime;
-            if (track.currentVolume > track.targetVolume) track.currentVolume = track.targetVolume;
-        } 
-        else if (track.currentVolume > track.targetVolume) {
-            track.currentVolume -= speed * deltaTime;
-            if (track.currentVolume < track.targetVolume) track.currentVolume = track.targetVolume;
+            track.currentVolume = Math.min(track.currentVolume + speed * deltaTime, track.targetVolume);
+        } else if (track.currentVolume > track.targetVolume) {
+            track.currentVolume = Math.max(track.currentVolume - speed * deltaTime, track.targetVolume);
         }
-
-        // Применяем громкость к аудиоузлу
         track.gainNode.gain.value = track.currentVolume;
-        
-        // Обновляем визуальную заливку на кнопке
         track.uiElement.style.setProperty('--vol', `${track.currentVolume * 100}%`);
     });
 
-    if (isPlaying) {
-        requestAnimationFrame(updateVolumes);
-    }
+    if (isPlaying) requestAnimationFrame(updateVolumes);
 }
 
-// 4. Управление Play / Stop
-masterBtn.addEventListener('click', () => {
-    if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
-    }
-
-    if (!isPlaying) {
-        // Синхронный старт
-        tracks.forEach(t => t.audioElement.play());
-        isPlaying = true;
-        masterBtn.textContent = "Stop";
-        masterBtn.style.backgroundColor = "#f44336"; // Красный цвет
+// --- 4. ОБНОВЛЕНИЕ ИНТЕРФЕЙСА (КУРСОРЫ) ---
+function updateUI() {
+    if (tracks.length > 0 && globalDuration > 0) {
+        const currentTime = tracks[0].audioElement.currentTime;
+        const progressPercent = (currentTime / globalDuration) * 100;
         
-        lastTime = performance.now();
-        requestAnimationFrame(updateVolumes);
-    } else {
-        tracks.forEach(t => t.audioElement.pause());
-        isPlaying = false;
-        masterBtn.textContent = "Play";
-        masterBtn.style.backgroundColor = "#4CAF50"; // Зеленый цвет
+        // Движение ползунка
+        globalPlayhead.style.left = `${progressPercent}%`;
+        globalProgressFill.style.width = `${progressPercent}%`;
+
+        tracks.forEach(t => {
+            if (t.id === activeTrackIndex) {
+                t.localPlayhead.style.left = `${progressPercent}%`;
+            }
+        });
+
+        // Состояние кнопки Stop
+        if (currentTime > 0) {
+            stopBtn.disabled = false;
+        } else {
+            stopBtn.disabled = true;
+        }
+
+        // Авто-стоп в конце
+        if (currentTime >= globalDuration) stopBtn.click();
     }
+    animationId = requestAnimationFrame(updateUI);
+}
+
+// --- 5. ПЕРЕМОТКА (SEEKING) ---
+globalProgressContainer.addEventListener('click', (e) => {
+    if (tracks.length === 0 || globalDuration === 0) return;
+    const rect = globalProgressContainer.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const percentage = clickX / rect.width;
+    
+    const newTime = percentage * globalDuration;
+    tracks.forEach(t => t.audioElement.currentTime = newTime);
+    
+    // Мгновенно обновляем графику при клике
+    updateUI(); 
 });
+
+// --- 6. РЕЖИМЫ И DRAG & DROP ---
+modePlayBtn.addEventListener('click', () => setMode('play'));
+modeManageBtn.addEventListener('click', () => setMode('manage'));
+
+function setMode(mode) {
+    currentMode = mode;
+    modePlayBtn.classList.toggle('active', mode === 'play');
+    modeManageBtn.classList.toggle('active', mode === 'manage');
+    
+    tracks.forEach(t => {
+        t.uiElement.draggable = (mode === 'manage');
+        if (mode === 'manage') t.uiElement.classList.add('draggable');
+        else t.uiElement.classList.remove('draggable');
+    });
+}
+
+let draggedItem = null;
+
+function setupDragAndDrop(element) {
+    element.addEventListener('dragstart', function() {
+        if (currentMode !== 'manage') return;
+        draggedItem = this;
+        setTimeout(() => this.classList.add('dragging'), 0);
+    });
+
+    element.addEventListener('dragend', function() {
+        this.classList.remove('dragging');
+        draggedItem = null;
+        trackContainer.querySelectorAll('.track-btn').forEach(el => el.classList.remove('drag-over'));
+    });
+
+    element.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        if (this !== draggedItem && currentMode === 'manage') {
+            this.classList.add('drag-over');
+        }
+    });
+
+    element.addEventListener('dragleave', function() {
+        this.classList.remove('drag-over');
+    });
+
+    element.addEventListener('drop', function() {
+        if (this !== draggedItem && currentMode === 'manage') {
+            this.classList.remove('drag-over');
+            const allItems = Array.from(trackContainer.querySelectorAll('.track-btn'));
+            const draggedIdx = allItems.indexOf(draggedItem);
+            const targetIdx = allItems.indexOf(this);
+            
+            if (draggedIdx < targetIdx) {
+                this.after(draggedItem);
+            } else {
+                this.before(draggedItem);
+            }
+        }
+    });
+}
