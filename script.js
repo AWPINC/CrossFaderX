@@ -6,9 +6,9 @@ let currentMode = 'play'; // 'play' или 'manage'
 let mixMode = 'single'; // 'single' или 'multi'
 let lastTime = 0;
 let animationId;
-let lastPlayingGroup = null; // Запоминаем, какая группа играла последней
+let lastPlayingGroup = null; 
 
-// DOM Элементы панели управления
+// DOM Элементы
 const fileUpload = document.getElementById('file-upload');
 const addGroupBtn = document.getElementById('add-group-btn');
 const groupsContainer = document.getElementById('groups-container');
@@ -28,7 +28,6 @@ const volumeSettings = document.getElementById('volume-settings');
 const volumeInput = document.getElementById('master-volume');
 const volumeVal = document.getElementById('volume-val');
 
-// --- ИНИЦИАЛИЗАЦИЯ AUDIO CONTEXT ---
 function initAudio() {
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -39,7 +38,6 @@ function initAudio() {
     if (audioCtx.state === 'suspended') audioCtx.resume();
 }
 
-// --- СОЗДАНИЕ НОВОЙ ГРУППЫ ---
 function createGroup(files = []) {
     initAudio();
 
@@ -50,7 +48,7 @@ function createGroup(files = []) {
         duration: 0,
         currentVolume: 0.0,
         targetVolume: 0.0,
-        fadeAction: 'none', // 'pause', 'stop', 'none'
+        fadeAction: 'none',
         gainNode: audioCtx.createGain(),
         ui: {}
     };
@@ -69,7 +67,6 @@ function createGroup(files = []) {
     return group;
 }
 
-// Построение элементов интерфейса для группы
 function buildGroupUI(group) {
     const container = document.createElement('div');
     container.className = 'group-container';
@@ -78,19 +75,18 @@ function buildGroupUI(group) {
     const header = document.createElement('div');
     header.className = 'group-header';
     
-    // Кнопка Play
     const playBtn = document.createElement('button');
     playBtn.className = 'transport-btn play group-play-btn';
     playBtn.textContent = '▶';
+    playBtn.title = 'Play';
     playBtn.addEventListener('click', () => playGroup(group));
 
-    // Кнопка Stop
-    const stopBtn = document.createElement('button');
-    stopBtn.className = 'transport-btn stop group-stop-btn';
-    stopBtn.textContent = '⏹';
-    stopBtn.addEventListener('click', () => stopGroup(group));
+    const restartBtn = document.createElement('button');
+    restartBtn.className = 'transport-btn restart group-restart-btn';
+    restartBtn.textContent = '⟳';
+    restartBtn.title = 'На начало';
+    restartBtn.addEventListener('click', () => restartGroup(group));
 
-    // Прогресс-бар позиции
     const progressContainer = document.createElement('div');
     progressContainer.className = 'global-progress group-progress-container';
     const progressFill = document.createElement('div');
@@ -99,34 +95,13 @@ function buildGroupUI(group) {
     progressKnob.className = 'progress-knob';
     progressContainer.append(progressFill, progressKnob);
 
-    // Перемотка группы округленная посекундно
-    progressContainer.addEventListener('click', (e) => {
-        if (group.tracks.length === 0 || group.duration === 0) return;
-        const rect = progressContainer.getBoundingClientRect();
-        const percentage = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        const newTime = Math.round(percentage * group.duration); // Ровная секунда
-        
-        const wasPlaying = group.isPlaying && group.targetVolume > 0;
-        if (wasPlaying) {
-            group.tracks.forEach(t => t.audioElement.pause());
-        }
-        
-        group.tracks.forEach(t => {
-            t.audioElement.currentTime = newTime;
-        });
-        
-        if (wasPlaying) {
-            Promise.all(group.tracks.map(t => t.audioElement.play())).catch(err => console.error(err));
-        }
-    });
-
-    // Кнопка Закрытия группы
     const closeBtn = document.createElement('button');
     closeBtn.className = 'transport-btn close-btn group-close-btn';
-    closeBtn.textContent = '⛌';
+    closeBtn.textContent = '✖';
+    closeBtn.title = 'Закрыть группу';
     closeBtn.addEventListener('click', () => closeGroup(group));
 
-    header.append(playBtn, stopBtn, progressContainer, closeBtn);
+    header.append(playBtn, restartBtn, progressContainer, closeBtn);
 
     const trackGrid = document.createElement('div');
     trackGrid.className = 'tracks-grid';
@@ -135,20 +110,18 @@ function buildGroupUI(group) {
     container.append(header, trackGrid);
     groupsContainer.append(container);
 
-    group.ui = { container, playBtn, stopBtn, progressFill, progressKnob, trackGrid };
+    group.ui = { container, playBtn, restartBtn, progressFill, progressKnob, trackGrid };
     
+    setupGroupReorderEvents(group);
     setupGroupDragAndDropEvents(group);
 }
 
-// --- ДОБАВЛЕНИЕ СТЕМОВ В ГРУППУ ---
 function addTrackToGroup(group, file, isFirst) {
     const fileUrl = URL.createObjectURL(file);
     const audioEl = new Audio(fileUrl);
     
     audioEl.addEventListener('loadedmetadata', () => {
-        if (audioEl.duration > group.duration) {
-            group.duration = audioEl.duration;
-        }
+        if (audioEl.duration > group.duration) group.duration = audioEl.duration;
     });
 
     const trackSource = audioCtx.createMediaElementSource(audioEl);
@@ -156,7 +129,6 @@ function addTrackToGroup(group, file, isFirst) {
     trackSource.connect(gainNode);
     gainNode.connect(group.gainNode);
 
-    // В режиме Соло по умолчанию активен первый загруженный трек
     gainNode.gain.value = isFirst ? 1.0 : 0.0;
 
     const btn = document.createElement('div');
@@ -216,11 +188,8 @@ function handleTrackClick(track) {
     }
 }
 
-// --- СТРОГАЯ ЛОГИКА ЕДИНСТВЕННОЙ ИГРАЮЩЕЙ ГРУППЫ ---
 function playGroup(group) {
     initAudio();
-    
-    // Правило исключительности: затухает любая другая играющая группа
     groups.forEach(g => {
         if (g.id !== group.id && g.isPlaying && g.targetVolume > 0) {
             g.targetVolume = 0.0;
@@ -228,7 +197,6 @@ function playGroup(group) {
         }
     });
 
-    // Если группа еще не запущена на уровне аудиоэлементов, запускаем синхронно по секундам
     if (!group.isPlaying) {
         const syncTime = group.tracks.length > 0 ? Math.round(group.tracks[0].audioElement.currentTime) : 0;
         group.tracks.forEach(t => t.audioElement.currentTime = syncTime);
@@ -244,13 +212,18 @@ function playGroup(group) {
     updateGroupUIStyles();
 }
 
+function restartGroup(group) {
+    // Мгновенный возврат на начало для всей группы
+    group.tracks.forEach(t => {
+        t.audioElement.currentTime = 0;
+    });
+}
+
 function stopGroup(group) {
     if (group.isPlaying && group.targetVolume > 0) {
-        // Если группа играет прямо сейчас, запускаем плавное затухание, а затем сброс
         group.targetVolume = 0.0;
         group.fadeAction = 'stop';
     } else {
-        // Если группа уже молчит, мгновенно сбрасываем позицию
         group.tracks.forEach(t => {
             t.audioElement.pause();
             t.audioElement.currentTime = 0;
@@ -276,28 +249,22 @@ function closeGroup(group) {
     updateGlobalTransportUI();
 }
 
-// --- ГЛОБАЛЬНЫЙ ТРАНСПОРТ ---
 globalPlayBtn.addEventListener('click', () => {
     initAudio();
     const activeGroup = groups.find(g => g.isPlaying && g.targetVolume > 0);
     
     if (activeGroup) {
-        // Глобальная пауза: плавно гасим текущую играющую группу
         lastPlayingGroup = activeGroup;
         activeGroup.targetVolume = 0.0;
         activeGroup.fadeAction = 'pause';
     } else {
-        // Глобальный запуск: возобновляем последнюю игравшую или первую доступную группу
         const groupToPlay = (lastPlayingGroup && groups.includes(lastPlayingGroup)) ? lastPlayingGroup : groups[0];
-        if (groupToPlay) {
-            playGroup(groupToPlay);
-        }
+        if (groupToPlay) playGroup(groupToPlay);
     }
     updateGlobalTransportUI();
 });
 
 globalStopBtn.addEventListener('click', () => {
-    // Сбрасываем все группы. Играющая группа затухнет, остальные мгновенно сбросятся.
     groups.forEach(g => stopGroup(g));
     updateGlobalTransportUI();
 });
@@ -316,7 +283,6 @@ function updateGroupUIStyles() {
     });
 }
 
-// --- ЕДИНЫЙ ЦИКЛ АНИМАЦИИ И ПЛАВНЫХ ЗАТУХАНИЙ ---
 function renderLoop(currentTimeStr) {
     if (!lastTime) lastTime = currentTimeStr;
     const deltaTime = (currentTimeStr - lastTime) / 1000;
@@ -326,7 +292,6 @@ function renderLoop(currentTimeStr) {
     const speed = 1.0 / fadeTime;
 
     groups.forEach(group => {
-        // 1. Изменение громкости всей группы (Fade-In / Fade-Out при Play/Pause/Stop)
         if (group.currentVolume < group.targetVolume) {
             group.currentVolume = Math.min(group.currentVolume + speed * deltaTime, group.targetVolume);
         } else if (group.currentVolume > group.targetVolume) {
@@ -334,7 +299,6 @@ function renderLoop(currentTimeStr) {
         }
         group.gainNode.gain.value = group.currentVolume;
 
-        // По завершении затухания до нуля выполняем действие ('pause' или 'stop')
         if (group.targetVolume === 0.0 && group.currentVolume <= 0 && group.isPlaying) {
             if (group.fadeAction === 'pause') {
                 group.tracks.forEach(t => t.audioElement.pause());
@@ -351,7 +315,6 @@ function renderLoop(currentTimeStr) {
             updateGroupUIStyles();
         }
 
-        // 2. Кроссфейд отдельных стемов внутри группы
         group.tracks.forEach(track => {
             if (track.currentVolume < track.targetVolume) {
                 track.currentVolume = Math.min(track.currentVolume + speed * deltaTime, track.targetVolume);
@@ -362,7 +325,6 @@ function renderLoop(currentTimeStr) {
             track.uiElement.style.setProperty('--vol', `${track.currentVolume * 100}%`);
         });
 
-        // 3. Обновление прогресс-баров и курсоров позиции
         if (group.tracks.length > 0 && group.duration > 0) {
             const time = group.tracks[0].audioElement.currentTime;
             const progress = (time / group.duration) * 100;
@@ -370,11 +332,8 @@ function renderLoop(currentTimeStr) {
             group.ui.progressFill.style.width = `${progress}%`;
             group.ui.progressKnob.style.left = `${progress}%`;
             
-            group.tracks.forEach(t => {
-                t.localPlayhead.style.left = `${progress}%`;
-            });
+            group.tracks.forEach(t => t.localPlayhead.style.left = `${progress}%`);
 
-            // Автоматическая остановка по окончании трека
             if (time >= group.duration && group.isPlaying && group.targetVolume > 0) {
                 stopGroup(group);
             }
@@ -385,7 +344,6 @@ function renderLoop(currentTimeStr) {
 }
 requestAnimationFrame(renderLoop);
 
-// --- НАСТРОЙКИ И РЕЖИМЫ ИНТЕРФЕЙСА ---
 modePlayBtn.addEventListener('click', () => setMode('play'));
 modeManageBtn.addEventListener('click', () => setMode('manage'));
 mixSingleBtn.addEventListener('click', () => setMixMode('single'));
@@ -399,6 +357,10 @@ function setMode(mode) {
     gridSettings.style.display = (mode === 'manage') ? 'flex' : 'none';
     
     groups.forEach(g => {
+        g.ui.container.draggable = (mode === 'manage');
+        g.ui.container.classList.toggle('draggable-group', mode === 'manage');
+        g.ui.container.classList.remove('dragging-group');
+
         g.tracks.forEach(t => {
             t.uiElement.draggable = (mode === 'manage');
             t.uiElement.classList.toggle('draggable', mode === 'manage');
@@ -412,7 +374,6 @@ function setMixMode(mode) {
     mixSingleBtn.classList.toggle('active', mode === 'single');
     mixMultiBtn.classList.toggle('active', mode === 'multi');
     
-    // Пересчитываем состояния в соответствии с новым режимом
     if (mixMode === 'single') {
         groups.forEach(g => {
             let foundFirstActive = false;
@@ -446,20 +407,20 @@ columnInput.addEventListener('input', (e) => {
 });
 
 fileUpload.addEventListener('change', (e) => {
-    if (e.target.files.length > 0) {
-        createGroup(e.target.files);
-    }
-    e.target.value = ''; // Сброс для возможности повторной загрузки
+    if (e.target.files.length > 0) createGroup(e.target.files);
+    e.target.value = ''; 
 });
 
 addGroupBtn.addEventListener('click', () => createGroup());
 
-// --- ОПТИМИЗИРОВАННЫЙ DRAG & DROP ТРЕКОВ И ГРУПП ---
+// --- DRAG & DROP (Треки + Группы) ---
 let draggedTrack = null;
+let draggedGroup = null;
 
 function setupTrackDragAndDrop(track) {
     track.uiElement.addEventListener('dragstart', function(e) {
         if (currentMode !== 'manage') return e.preventDefault();
+        e.stopPropagation(); 
         draggedTrack = track;
         setTimeout(() => this.classList.add('dragging'), 0);
     });
@@ -474,11 +435,8 @@ function setupTrackDragAndDrop(track) {
 
     track.uiElement.addEventListener('dragover', function(e) {
         if (currentMode !== 'manage' || !draggedTrack) return;
-        e.preventDefault();
-        e.stopPropagation();
-        if (track !== draggedTrack) {
-            this.classList.add('drag-over');
-        }
+        e.preventDefault(); e.stopPropagation();
+        if (track !== draggedTrack) this.classList.add('drag-over');
     });
 
     track.uiElement.addEventListener('dragleave', function() {
@@ -487,12 +445,25 @@ function setupTrackDragAndDrop(track) {
 
     track.uiElement.addEventListener('drop', function(e) {
         if (currentMode !== 'manage' || !draggedTrack) return;
-        e.preventDefault();
-        e.stopPropagation();
+        e.preventDefault(); e.stopPropagation();
         this.classList.remove('drag-over');
-        if (track !== draggedTrack) {
-            moveTrackToGroup(draggedTrack, this);
-        }
+        if (track !== draggedTrack) moveTrackToGroup(draggedTrack, this);
+    });
+}
+
+function setupGroupReorderEvents(group) {
+    const container = group.ui.container;
+
+    container.addEventListener('dragstart', (e) => {
+        if (currentMode !== 'manage') return e.preventDefault();
+        draggedGroup = group;
+        setTimeout(() => container.classList.add('dragging-group'), 0);
+    });
+
+    container.addEventListener('dragend', () => {
+        container.classList.remove('dragging-group');
+        draggedGroup = null;
+        document.querySelectorAll('.group-container').forEach(el => el.classList.remove('drag-top', 'drag-bottom'));
     });
 }
 
@@ -500,17 +471,14 @@ function setupGroupDragAndDropEvents(group) {
     const grid = group.ui.trackGrid;
     const container = group.ui.container;
 
-    // События для самой сетки треков (перетаскивание внутрь группы)
     grid.addEventListener('dragover', (e) => {
         if (currentMode !== 'manage' || !draggedTrack) return;
         e.preventDefault();
         grid.classList.add('grid-drag-over');
-        container.classList.remove('drag-top', 'drag-bottom'); // убираем внешние подсветки
+        container.classList.remove('drag-top', 'drag-bottom'); 
     });
 
-    grid.addEventListener('dragleave', () => {
-        grid.classList.remove('grid-drag-over');
-    });
+    grid.addEventListener('dragleave', () => grid.classList.remove('grid-drag-over'));
 
     grid.addEventListener('drop', (e) => {
         if (currentMode !== 'manage' || !draggedTrack) return;
@@ -519,13 +487,14 @@ function setupGroupDragAndDropEvents(group) {
         moveTrackToGroup(draggedTrack, null, group);
     });
 
-    // События для контейнера группы (перетаскивание МЕЖДУ группами с подсветкой краев)
     container.addEventListener('dragover', (e) => {
-        if (currentMode !== 'manage' || !draggedTrack) return;
+        if (currentMode !== 'manage') return;
+        if (!draggedTrack && !draggedGroup) return; 
+        if (draggedGroup === group) return;
+
         e.preventDefault();
         
-        // Если летим именно над сеткой треков, пусть работает логика сетки
-        if (e.target.closest('.tracks-grid')) {
+        if (draggedTrack && e.target.closest('.tracks-grid')) {
             container.classList.remove('drag-top', 'drag-bottom');
             return;
         }
@@ -543,13 +512,13 @@ function setupGroupDragAndDropEvents(group) {
         }
     });
 
-    container.addEventListener('dragleave', () => {
-        container.classList.remove('drag-top', 'drag-bottom');
-    });
+    container.addEventListener('dragleave', () => container.classList.remove('drag-top', 'drag-bottom'));
 
     container.addEventListener('drop', (e) => {
-        if (currentMode !== 'manage' || !draggedTrack) return;
-        if (e.target.closest('.tracks-grid')) return; // Отдаем управление дропу сетки
+        if (currentMode !== 'manage') return;
+        if (!draggedTrack && !draggedGroup) return;
+        
+        if (draggedTrack && e.target.closest('.tracks-grid')) return; 
 
         e.preventDefault();
         e.stopPropagation();
@@ -557,11 +526,31 @@ function setupGroupDragAndDropEvents(group) {
         const isTop = container.classList.contains('drag-top');
         container.classList.remove('drag-top', 'drag-bottom');
 
-        createNewGroupFromTrack(draggedTrack, group, isTop ? 'before' : 'after');
+        if (draggedTrack) {
+            createNewGroupFromTrack(draggedTrack, group, isTop ? 'before' : 'after');
+        } else if (draggedGroup && draggedGroup !== group) {
+            moveGroupPosition(draggedGroup, group, isTop ? 'before' : 'after');
+        }
     });
 }
 
-// Перетаскивание на пустую область контейнера групп
+function moveGroupPosition(sourceGroup, targetGroup, position) {
+    if (position === 'before') {
+        groupsContainer.insertBefore(sourceGroup.ui.container, targetGroup.ui.container);
+    } else {
+        groupsContainer.insertBefore(sourceGroup.ui.container, targetGroup.ui.container.nextSibling);
+    }
+
+    groups = groups.filter(g => g.id !== sourceGroup.id);
+    const targetIdx = groups.indexOf(targetGroup);
+    
+    if (position === 'before') {
+        groups.splice(targetIdx, 0, sourceGroup);
+    } else {
+        groups.splice(targetIdx + 1, 0, sourceGroup);
+    }
+}
+
 groupsContainer.addEventListener('dragover', (e) => {
     if (currentMode !== 'manage' || !draggedTrack) return;
     e.preventDefault();
@@ -575,7 +564,6 @@ groupsContainer.addEventListener('drop', (e) => {
     }
 });
 
-// Перемещение трека в существующую группу
 function moveTrackToGroup(track, targetElement = null, targetGroupParam = null) {
     const sourceGroup = groups.find(g => g.tracks.includes(track));
     const targetGroup = targetGroupParam || groups.find(g => g.tracks.some(t => t.uiElement === targetElement));
@@ -583,14 +571,12 @@ function moveTrackToGroup(track, targetElement = null, targetGroupParam = null) 
     if (!sourceGroup || !targetGroup) return;
     if (sourceGroup === targetGroup && !targetElement) return;
 
-    // Удаляем из старой группы
     sourceGroup.tracks = sourceGroup.tracks.filter(t => t.id !== track.id);
     
     if (sourceGroup !== targetGroup) {
         track.gainNode.disconnect();
         track.gainNode.connect(targetGroup.gainNode);
         
-        // Синхронизация воспроизведения: если целевая группа звучит прямо сейчас
         if (targetGroup.isPlaying && targetGroup.targetVolume > 0) {
             const syncTime = targetGroup.tracks.length > 0 ? targetGroup.tracks[0].audioElement.currentTime : 0;
             track.audioElement.currentTime = syncTime;
@@ -609,13 +595,11 @@ function moveTrackToGroup(track, targetElement = null, targetGroupParam = null) 
         targetGroup.ui.trackGrid.appendChild(track.uiElement);
     }
 
-    // Пересчитываем длительности групп
     recalcGroupDuration(sourceGroup);
     recalcGroupDuration(targetGroup);
     updateGlobalTransportUI();
 }
 
-// Создание новой группы из перетащенного трека (между группами или в конец)
 function createNewGroupFromTrack(track, targetGroup, position) {
     const sourceGroup = groups.find(g => g.tracks.includes(track));
     if (!sourceGroup) return;
@@ -623,9 +607,8 @@ function createNewGroupFromTrack(track, targetGroup, position) {
     sourceGroup.tracks = sourceGroup.tracks.filter(t => t.id !== track.id);
     track.gainNode.disconnect();
 
-    const newGroup = createGroup([]); // Создаем пустую группу
+    const newGroup = createGroup([]); 
 
-    // Перемещаем контейнер в DOM в нужное место
     if (targetGroup && position === 'before') {
         groupsContainer.insertBefore(newGroup.ui.container, targetGroup.ui.container);
         groups = groups.filter(g => g.id !== newGroup.id);
@@ -638,12 +621,9 @@ function createNewGroupFromTrack(track, targetGroup, position) {
         groups.splice(idx + 1, 0, newGroup);
     }
 
-    // Привязываем трек к новой группе
     track.gainNode.connect(newGroup.gainNode);
     newGroup.tracks.push(track);
     newGroup.ui.trackGrid.appendChild(track.uiElement);
-    
-    // Останавливаем трек, так как новая группа по умолчанию не играет
     track.audioElement.pause();
 
     recalcGroupDuration(sourceGroup);
@@ -653,26 +633,18 @@ function createNewGroupFromTrack(track, targetGroup, position) {
 }
 
 function recalcGroupDuration(group) {
-    if (group.tracks.length === 0) {
-        group.duration = 0;
-    } else {
-        group.duration = Math.max(...group.tracks.map(t => t.audioElement.duration || 0));
-    }
+    if (group.tracks.length === 0) group.duration = 0;
+    else group.duration = Math.max(...group.tracks.map(t => t.audioElement.duration || 0));
 }
 
-// --- СИСТЕМНЫЙ DRAG & DROP ФАЙЛОВ ИЗ WINDOWS ---
 window.addEventListener('dragover', (e) => {
-    if (!draggedTrack) {
-        e.preventDefault(); // Разрешаем дроп файлов извне
-    }
+    if (!draggedTrack && !draggedGroup) e.preventDefault(); 
 });
 
 window.addEventListener('drop', (e) => {
-    if (!draggedTrack && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    if (!draggedTrack && !draggedGroup && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
         e.preventDefault();
         const audioFiles = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('audio/'));
-        if (audioFiles.length > 0) {
-            createGroup(audioFiles);
-        }
+        if (audioFiles.length > 0) createGroup(audioFiles);
     }
 });

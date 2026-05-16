@@ -27,6 +27,7 @@ input[type="file"] { display: none; }
 .transport-controls { display: flex; gap: 10px; }
 .transport-btn {
     padding: 10px 22px; border-radius: 13px; font-weight: bold; border: none; cursor: pointer; color: white; transition: 0.2s;
+    font-size: 1.2rem; display: flex; align-items: center; justify-content: center;
 }
 .transport-btn.play { background-color: #4CAF50; }
 .transport-btn.play:hover { background-color: #45a049; }
@@ -34,11 +35,13 @@ input[type="file"] { display: none; }
 .transport-btn.pause:hover { background-color: #e0a800; }
 .transport-btn.stop { background-color: #f44336; }
 .transport-btn.stop:hover { background-color: #da190b; }
+.transport-btn.restart { background-color: #2196F3; }
+.transport-btn.restart:hover { background-color: #0b7dda; }
 .transport-btn.close-btn { background-color: #555; }
 .transport-btn.close-btn:hover { background-color: #f44336; }
 
 .input-group { display: flex; align-items: center; gap: 10px; }
-.input-group label { font-size: 0.95rem; color: #ffffff; }
+.input-group label { font-size: 0.95rem; color: #fff; }
 .input-group input[type="number"] { width: 65px; padding: 8px; background: #333; color: white; border: 1px solid #555; border-radius: 13px; font-weight: bold; text-align: center;}
 
 .dynamic-slider-container { width: 260px; display: flex; justify-content: flex-end; }
@@ -67,6 +70,16 @@ input[type="file"] { display: none; }
     border-color: #4CAF50; box-shadow: 0 0 12px rgba(76, 175, 80, 0.2);
 }
 
+/* Драг-интерфейс целой группы */
+.group-container.draggable-group { cursor: grab; }
+.group-container.draggable-group:active { cursor: grabbing; }
+.group-container.draggable-group button, 
+.group-container.draggable-group .global-progress { cursor: default; }
+
+.group-container.dragging-group {
+    opacity: 0.6; border: 2px dashed #2196F3; background-color: #222;
+}
+
 /* Стили для перетаскивания МЕЖДУ группами */
 .group-container.drag-top {
     border-top: 4px solid #2196F3 !important; transform: translateY(4px);
@@ -76,23 +89,26 @@ input[type="file"] { display: none; }
 }
 
 .group-header { display: flex; align-items: center; gap: 12px; margin-bottom: 15px; }
+
+/* Кнопки внутри группы */
+.group-play-btn, .group-restart-btn, .group-close-btn {
+    padding: 8px 15px; font-size: 1.1rem;
+}
 .group-play-btn.active { background-color: #FFC107 !important; color: black !important; }
 
-/* Прогресс бар группы */
+/* --- Тонкий и неуправляемый прогресс бар --- */
 .global-progress {
-    position: relative; height: 18px; background: #111; border-radius: 13px; cursor: pointer; 
-    border: 1px solid #444; display: flex; align-items: center; transition: height 0.2s ease;
+    position: relative; height: 6px; background: #111; border-radius: 6px; 
+    border: 1px solid #444; display: flex; align-items: center; 
 }
 .group-progress-container { flex-grow: 1; }
-.global-progress:hover { height: 24px; }
 .progress-fill {
-    position: absolute; left: 0; top: 0; height: 100%; background: #4CAF50; border-radius: 13px; width: 0%; pointer-events: none;
+    position: absolute; left: 0; top: 0; height: 100%; background: #4CAF50; border-radius: 6px; width: 0%; pointer-events: none;
 }
 .progress-knob {
-    position: absolute; top: 50%; left: 0%; transform: translate(-50%, -50%); width: 14px; height: 14px; 
-    background: #fff; border-radius: 50%; box-shadow: 0 0 5px rgba(0,0,0,0.6); pointer-events: none; transition: transform 0.2s;
+    position: absolute; top: 50%; left: 0%; transform: translate(-50%, -50%); width: 8px; height: 8px; 
+    background: #fff; border-radius: 50%; box-shadow: 0 0 3px rgba(0,0,0,0.8); pointer-events: none;
 }
-.global-progress:hover .progress-knob { transform: translate(-50%, -50%) scale(1.5); }
 
 /* --- СЕТКА СТЕМОВ/ТРЕКОВ --- */
 .tracks-grid { display: grid; grid-template-columns: repeat(var(--grid-cols, 4), 1fr); gap: 15px; min-height: 80px; padding: 5px; border-radius: 8px; transition: background 0.2s; }
