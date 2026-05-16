@@ -1,12 +1,12 @@
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, sans-serif; }
 
-body { background-color: #1e1e1e; color: #ffffff; padding: 20px; }
+body { background-color: #1e1e1e; color: #ffffff; padding: 20px; user-select: none; }
 .app-container { max-width: 1200px; margin: 0 auto; }
 
-/* --- ОБЩАЯ ПАНЕЛЬ И СТРОКИ --- */
+/* --- ОБЩАЯ ПАНЕЛЬ УПРАВЛЕНИЯ --- */
 .control-panel {
-    background-color: #2d2d2d; padding: 15px 20px; border-radius: 13px; margin-bottom: 20px;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    background-color: #2d2d2d; padding: 15px 20px; border-radius: 13px; margin-bottom: 25px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.4);
 }
 
 .panel-row {
@@ -18,23 +18,31 @@ body { background-color: #1e1e1e; color: #ffffff; padding: 20px; }
 
 input[type="file"] { display: none; }
 .custom-file-upload, .custom-btn {
-    background-color: #4CAF50; color: white; padding: 10px 15px; border-radius: 13px; cursor: pointer; font-weight: bold; border: none;
+    background-color: #4CAF50; color: white; padding: 10px 18px; border-radius: 13px; cursor: pointer; font-weight: bold; border: none; transition: 0.2s;
 }
-.custom-btn { background-color: #2196F3; } /* Синяя кнопка "Новая группа" */
+.custom-file-upload:hover { background-color: #45a049; }
+.custom-btn { background-color: #2196F3; } 
+.custom-btn:hover { background-color: #0b7dda; }
 
 .transport-controls { display: flex; gap: 10px; }
 .transport-btn {
-    padding: 10px 20px; border-radius: 13px; font-weight: bold; border: none; cursor: pointer; color: white; transition: 0.3s;
+    padding: 10px 22px; border-radius: 13px; font-weight: bold; border: none; cursor: pointer; color: white; transition: 0.2s;
 }
 .transport-btn.play { background-color: #4CAF50; }
+.transport-btn.play:hover { background-color: #45a049; }
 .transport-btn.pause { background-color: #FFC107; color: black; }
+.transport-btn.pause:hover { background-color: #e0a800; }
 .transport-btn.stop { background-color: #f44336; }
+.transport-btn.stop:hover { background-color: #da190b; }
+.transport-btn.close-btn { background-color: #555; }
+.transport-btn.close-btn:hover { background-color: #f44336; }
 
 .input-group { display: flex; align-items: center; gap: 10px; }
-.input-group input[type="number"] { width: 60px; padding: 8px; background: #333; color: white; border: 1px solid #555; border-radius: 13px;}
+.input-group label { font-size: 0.95rem; color: #ccc; }
+.input-group input[type="number"] { width: 65px; padding: 8px; background: #333; color: white; border: 1px solid #555; border-radius: 13px; font-weight: bold; text-align: center;}
 
-.dynamic-slider-container { width: 250px; display: flex; justify-content: center; padding: 0 15px; }
-.dynamic-slider-container input[type="range"] { width: 100px; cursor: pointer; }
+.dynamic-slider-container { width: 260px; display: flex; justify-content: flex-end; }
+.dynamic-slider-container input[type="range"] { width: 110px; cursor: pointer; }
 #master-volume { accent-color: #4CAF50; }
 #column-count { accent-color: #2196F3; }
 #column-val, #volume-val { font-weight: bold; min-width: 45px; text-align: right; }
@@ -42,71 +50,85 @@ input[type="file"] { display: none; }
 #column-val { color: #2196F3; }
 
 .mode-switch { display: flex; border: 1px solid #555; border-radius: 13px; overflow: hidden; }
-.mode-btn { padding: 8px 15px; background: #333; color: white; border: none; cursor: pointer; transition: background 0.2s;}
+.mode-btn { padding: 8px 16px; background: #333; color: white; border: none; cursor: pointer; font-weight: 500; transition: background 0.2s;}
+.mode-btn:hover { background: #444; }
 #mode-play.active { background: #4CAF50; }
 #mode-manage.active { background: #2196F3; }
 #mix-single.active { background: #9C27B0; }
 #mix-multi.active { background: #FF9800; }
 
-/* --- ГРУППЫ ВОСПРОИЗВЕДЕНИЯ --- */
-.groups-container { display: flex; flex-direction: column; gap: 20px; }
-.group-container { background-color: #262626; border: 1px solid #444; border-radius: 13px; padding: 15px; }
-.group-header { display: flex; align-items: center; gap: 15px; margin-bottom: 15px; }
+/* --- КОНТЕЙНЕРЫ ГРУПП --- */
+.groups-container { display: flex; flex-direction: column; gap: 20px; min-height: 200px; padding-bottom: 100px; }
+.group-container { 
+    background-color: #262626; border: 2px solid #3a3a3a; border-radius: 13px; padding: 15px; 
+    transition: border-color 0.3s, box-shadow 0.3s, transform 0.2s; position: relative;
+}
+.group-container.group-playing {
+    border-color: #4CAF50; box-shadow: 0 0 12px rgba(76, 175, 80, 0.2);
+}
 
-.group-play-btn, .group-close-btn { padding: 8px 15px; font-size: 0.9em; }
-.group-close-btn { background-color: #555; }
-.group-close-btn:hover { background-color: #f44336; }
+/* Стили для перетаскивания МЕЖДУ группами */
+.group-container.drag-top {
+    border-top: 4px solid #2196F3 !important; transform: translateY(4px);
+}
+.group-container.drag-bottom {
+    border-bottom: 4px solid #2196F3 !important; transform: translateY(-4px);
+}
 
+.group-header { display: flex; align-items: center; gap: 12px; margin-bottom: 15px; }
+.group-play-btn.active { background-color: #FFC107 !important; color: black !important; }
+
+/* Прогресс бар группы */
 .global-progress {
-    position: relative; height: 20px; background: #111; border-radius: 13px; cursor: pointer; 
+    position: relative; height: 18px; background: #111; border-radius: 13px; cursor: pointer; 
     border: 1px solid #444; display: flex; align-items: center; transition: height 0.2s ease;
 }
 .group-progress-container { flex-grow: 1; }
-.global-progress:hover { height: 28px; }
+.global-progress:hover { height: 24px; }
 .progress-fill {
     position: absolute; left: 0; top: 0; height: 100%; background: #4CAF50; border-radius: 13px; width: 0%; pointer-events: none;
 }
 .progress-knob {
-    position: absolute; top: 50%; left: 0%; transform: translate(-50%, -50%); width: 16px; height: 16px; 
-    background: #fff; border-radius: 50%; box-shadow: 0 0 5px rgba(0,0,0,0.5); pointer-events: none; transition: transform 0.2s;
+    position: absolute; top: 50%; left: 0%; transform: translate(-50%, -50%); width: 14px; height: 14px; 
+    background: #fff; border-radius: 50%; box-shadow: 0 0 5px rgba(0,0,0,0.6); pointer-events: none; transition: transform 0.2s;
 }
-.global-progress:hover .progress-knob { transform: translate(-50%, -50%) scale(1.6); }
+.global-progress:hover .progress-knob { transform: translate(-50%, -50%) scale(1.5); }
 
-/* --- СЕТКА ТРЕКОВ --- */
-.tracks-grid { display: grid; grid-template-columns: repeat(var(--grid-cols, 4), 1fr); gap: 15px; min-height: 80px; }
-.tracks-grid.grid-drag-over { background: rgba(33, 150, 243, 0.1); border-radius: 13px; outline: 2px dashed #2196F3; }
+/* --- СЕТКА СТЕМОВ/ТРЕКОВ --- */
+.tracks-grid { display: grid; grid-template-columns: repeat(var(--grid-cols, 4), 1fr); gap: 15px; min-height: 80px; padding: 5px; border-radius: 8px; transition: background 0.2s; }
+.tracks-grid.grid-drag-over { background: rgba(33, 150, 243, 0.15); outline: 2px dashed #2196F3; }
 
-@media (max-width: 768px) { .tracks-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important; } }
+@media (max-width: 768px) { .tracks-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)) !important; } }
 
+/* Кнопка стема */
 .track-btn {
-    position: relative; background-color: #222; color: white; border: 2px solid #444; border-radius: 13px; 
-    height: 80px; cursor: pointer; overflow: hidden; transition: border-color 0.2s; user-select: none;
+    position: relative; background-color: #1c1c1c; color: #eee; border: 2px solid #444; border-radius: 13px; 
+    height: 75px; cursor: pointer; overflow: hidden; transition: border-color 0.2s, background-color 0.2s; user-select: none;
 }
-.track-btn.active { border-color: #4CAF50; }
+.track-btn:hover { background-color: #242424; }
+.track-btn.active { border-color: #4CAF50; background-color: #152417; }
+
+/* Драг-интерфейс треков */
 .track-btn.draggable { cursor: grab; }
 .track-btn.draggable:active { cursor: grabbing; }
-.track-btn.dragging { opacity: 0.5; border: 2px dashed #2196F3; }
+.track-btn.dragging { opacity: 0.4; border: 2px dashed #2196F3; background: #2b2b2b; }
 .track-btn.drag-over { border-top: 4px solid #2196F3; transform: translateY(2px); }
 
+/* Заполнение уровня кроссфейда */
 .track-btn::before {
     content: ''; position: absolute; bottom: 0; left: 0; width: 100%; height: var(--vol, 0%);
-    background-color: rgba(76, 175, 80, 0.2); z-index: 1; pointer-events: none;
+    background-color: rgba(76, 175, 80, 0.15); z-index: 1; pointer-events: none; transition: height 0.1s linear;
 }
 
+/* Локальный курсор позиции внутри трека */
 .track-playhead {
-    position: absolute; top: 0; left: 0; width: 2px; height: 100%; background: rgba(255, 255, 255, 0.8); 
-    z-index: 2; display: none; pointer-events: none; box-shadow: 0 0 4px rgba(0,0,0,0.5);
+    position: absolute; top: 0; left: 0; width: 2px; height: 100%; background: rgba(255, 255, 255, 0.7); 
+    z-index: 2; display: none; pointer-events: none; box-shadow: 0 0 4px rgba(0,0,0,0.6);
 }
 .track-btn.active .track-playhead { display: block; }
+
 .track-title { 
     position: absolute; z-index: 3; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-    pointer-events: none; text-align: center; width: 90%; font-weight: 500;
+    pointer-events: none; text-align: center; width: 92%; font-size: 0.88rem; font-weight: 500;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-
-/* --- DRAG & DROP ОВЕРЛЕЙ ИЗ WINDOWS --- */
-.dnd-overlay {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(33, 150, 243, 0.8); color: white; display: flex; justify-content: center; align-items: center;
-    font-size: 2.5rem; font-weight: bold; z-index: 9999; pointer-events: none; opacity: 0; transition: opacity 0.3s;
-}
-.dnd-overlay.active { opacity: 1; }
