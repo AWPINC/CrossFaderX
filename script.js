@@ -81,13 +81,13 @@ function buildGroupUI(group) {
     // Кнопка Play
     const playBtn = document.createElement('button');
     playBtn.className = 'transport-btn play group-play-btn';
-    playBtn.textContent = 'Play';
+    playBtn.textContent = '▶';
     playBtn.addEventListener('click', () => playGroup(group));
 
     // Кнопка Stop
     const stopBtn = document.createElement('button');
     stopBtn.className = 'transport-btn stop group-stop-btn';
-    stopBtn.textContent = 'Stop';
+    stopBtn.textContent = '⏹';
     stopBtn.addEventListener('click', () => stopGroup(group));
 
     // Прогресс-бар позиции
@@ -123,7 +123,7 @@ function buildGroupUI(group) {
     // Кнопка Закрытия группы
     const closeBtn = document.createElement('button');
     closeBtn.className = 'transport-btn close-btn group-close-btn';
-    closeBtn.textContent = 'Close';
+    closeBtn.textContent = '⛌';
     closeBtn.addEventListener('click', () => closeGroup(group));
 
     header.append(playBtn, stopBtn, progressContainer, closeBtn);
@@ -304,7 +304,7 @@ globalStopBtn.addEventListener('click', () => {
 
 function updateGlobalTransportUI() {
     const isAnyPlaying = groups.some(g => g.isPlaying && g.targetVolume > 0);
-    globalPlayBtn.textContent = isAnyPlaying ? 'Pause' : 'Play';
+    globalPlayBtn.textContent = isAnyPlaying ? '⏸' : '▶';
     globalPlayBtn.className = isAnyPlaying ? 'transport-btn pause' : 'transport-btn play';
 }
 
