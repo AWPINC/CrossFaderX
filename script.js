@@ -1,30 +1,25 @@
 let audioCtx;
 let masterGainNode; 
-let tracks = [];
-let isPlaying = false;
+let groups = [];
+let groupIdCounter = 0;
 let currentMode = 'play';
-let mixMode = 'single'; // Новый параметр: single или multi
+let mixMode = 'single';
 let lastTime = 0;
 let animationId;
-let globalDuration = 0;
 
 // DOM Элементы
 const fileUpload = document.getElementById('file-upload');
-const trackContainer = document.getElementById('track-container');
-const playPauseBtn = document.getElementById('play-pause-btn');
-const stopBtn = document.getElementById('stop-btn');
+const addGroupBtn = document.getElementById('add-group-btn');
+const groupsContainer = document.getElementById('groups-container');
 const fadeTimeInput = document.getElementById('fade-time');
-const globalProgressContainer = document.getElementById('global-progress-container');
-const globalProgressFill = document.getElementById('global-progress-fill');
-const globalPlayhead = document.getElementById('global-playhead');
+const globalPlayBtn = document.getElementById('global-play-btn');
+const globalStopBtn = document.getElementById('global-stop-btn');
 
 const modePlayBtn = document.getElementById('mode-play');
 const modeManageBtn = document.getElementById('mode-manage');
-
 const mixSingleBtn = document.getElementById('mix-single');
 const mixMultiBtn = document.getElementById('mix-multi');
 
-// Сменяющиеся элементы
 const gridSettings = document.getElementById('grid-settings');
 const columnInput = document.getElementById('column-count');
 const columnVal = document.getElementById('column-val');
@@ -32,242 +27,318 @@ const volumeSettings = document.getElementById('volume-settings');
 const volumeInput = document.getElementById('master-volume');
 const volumeVal = document.getElementById('volume-val');
 
-// --- 1. ЗАГРУЗКА И ПОДГОТОВКА ---
-fileUpload.addEventListener('change', function(event) {
-    const files = Array.from(event.target.files);
-    if (files.length === 0) return;
-
+// --- ИНИЦИАЛИЗАЦИЯ AUDIO CONTEXT ---
+function initAudio() {
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         masterGainNode = audioCtx.createGain();
         masterGainNode.connect(audioCtx.destination);
         masterGainNode.gain.value = parseFloat(volumeInput.value);
     }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+// --- СОЗДАНИЕ ГРУППЫ ---
+function createGroup(files = []) {
+    initAudio();
+
+    const group = {
+        id: ++groupIdCounter,
+        tracks: [],
+        isPlaying: false,
+        duration: 0,
+        currentVolume: 0.0,
+        targetVolume: 0.0,
+        isFadingOut: false,
+        fadeAction: null,
+        gainNode: audioCtx.createGain(),
+        ui: {}
+    };
     
-    cleanupSession();
+    // Группа стартует с громкостью 0 (чтобы плавно появиться при Play)
+    group.gainNode.gain.value = 0;
+    group.gainNode.connect(masterGainNode);
+
+    buildGroupUI(group);
+    groups.push(group);
+
+    if (files.length > 0) {
+        Array.from(files).forEach((file, i) => addTrackToGroup(group, file, i === 0));
+    }
+}
+
+function buildGroupUI(group) {
+    const container = document.createElement('div');
+    container.className = 'group-container';
     
-    files.forEach((file, i) => {
-        const fileUrl = URL.createObjectURL(file);
-        const audioEl = new Audio(fileUrl);
-        
-        if (i === 0) {
-            audioEl.addEventListener('loadedmetadata', () => {
-                globalDuration = audioEl.duration;
-            });
-        }
+    // Шапка: Play -> Progress -> Close
+    const header = document.createElement('div');
+    header.className = 'group-header';
+    
+    const playBtn = document.createElement('button');
+    playBtn.className = 'transport-btn play group-play-btn';
+    playBtn.textContent = 'Play';
+    playBtn.addEventListener('click', () => toggleGroupPlay(group));
 
-        const trackSource = audioCtx.createMediaElementSource(audioEl);
-        const gainNode = audioCtx.createGain();
-        
-        trackSource.connect(gainNode);
-        gainNode.connect(masterGainNode);
+    const progressContainer = document.createElement('div');
+    progressContainer.className = 'global-progress group-progress-container';
+    const progressFill = document.createElement('div');
+    progressFill.className = 'progress-fill';
+    const progressKnob = document.createElement('div');
+    progressKnob.className = 'progress-knob';
+    progressContainer.append(progressFill, progressKnob);
 
-        const isFirst = i === 0;
-        gainNode.gain.value = isFirst ? 1.0 : 0.0;
-
-        const btn = document.createElement('div');
-        btn.className = `track-btn ${isFirst ? 'active' : ''}`;
-        btn.dataset.index = i;
+    // Перемотка группы
+    progressContainer.addEventListener('click', (e) => {
+        if (group.tracks.length === 0 || group.duration === 0) return;
+        const rect = progressContainer.getBoundingClientRect();
+        const percentage = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const newTime = Math.round(percentage * group.duration); // Округление до секунды
         
-        const trackPlayhead = document.createElement('div');
-        trackPlayhead.className = 'track-playhead';
+        const wasPlaying = group.isPlaying && !group.isFadingOut;
+        if (wasPlaying) group.tracks.forEach(t => t.audioElement.pause());
         
-        const title = document.createElement('div');
-        title.className = 'track-title';
-        title.textContent = file.name;
-
-        btn.appendChild(trackPlayhead);
-        btn.appendChild(title);
+        group.tracks.forEach(t => t.audioElement.currentTime = newTime);
         
-        btn.style.setProperty('--vol', `${(isFirst ? 1 : 0) * 100}%`);
-        trackContainer.appendChild(btn);
-
-        btn.addEventListener('click', () => {
-            if (currentMode === 'play') {
-                if (mixMode === 'single') {
-                    switchTrack(i);
-                } else {
-                    toggleTrack(i);
-                }
-            }
-        });
-
-        tracks.push({
-            id: i,
-            audioElement: audioEl,
-            gainNode: gainNode,
-            uiElement: btn,
-            localPlayhead: trackPlayhead,
-            currentVolume: isFirst ? 1.0 : 0.0,
-            targetVolume: isFirst ? 1.0 : 0.0
-        });
-        
-        setupDragAndDrop(btn);
+        if (wasPlaying) Promise.all(group.tracks.map(t => t.audioElement.play())).catch(e => console.error(e));
     });
 
-    playPauseBtn.disabled = false;
-    playPauseBtn.textContent = "Play";
-    playPauseBtn.className = "transport-btn play";
-    
-    requestAnimationFrame(updateUI);
-});
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'transport-btn stop group-close-btn';
+    closeBtn.textContent = 'Close';
+    closeBtn.addEventListener('click', () => closeGroup(group));
 
-function cleanupSession() {
-    tracks.forEach(t => {
+    header.append(playBtn, progressContainer, closeBtn);
+
+    const trackGrid = document.createElement('div');
+    trackGrid.className = 'tracks-grid';
+    trackGrid.style.setProperty('--grid-cols', columnInput.value);
+
+    container.append(header, trackGrid);
+    groupsContainer.append(container);
+
+    group.ui = { container, playBtn, progressFill, progressKnob, trackGrid };
+    setupGridDragAndDrop(group);
+}
+
+// --- ДОБАВЛЕНИЕ И УПРАВЛЕНИЕ ТРЕКАМИ ---
+function addTrackToGroup(group, file, isFirst) {
+    const fileUrl = URL.createObjectURL(file);
+    const audioEl = new Audio(fileUrl);
+    
+    audioEl.addEventListener('loadedmetadata', () => {
+        if (audioEl.duration > group.duration) group.duration = audioEl.duration;
+    });
+
+    const trackSource = audioCtx.createMediaElementSource(audioEl);
+    const gainNode = audioCtx.createGain();
+    trackSource.connect(gainNode);
+    gainNode.connect(group.gainNode);
+
+    gainNode.gain.value = isFirst ? 1.0 : 0.0;
+
+    const btn = document.createElement('div');
+    btn.className = `track-btn ${isFirst ? 'active' : ''}`;
+    
+    const trackPlayhead = document.createElement('div');
+    trackPlayhead.className = 'track-playhead';
+    
+    const title = document.createElement('div');
+    title.className = 'track-title';
+    title.textContent = file.name;
+
+    btn.appendChild(trackPlayhead);
+    btn.appendChild(title);
+    btn.style.setProperty('--vol', `${(isFirst ? 1 : 0) * 100}%`);
+    btn.draggable = (currentMode === 'manage');
+    if (currentMode === 'manage') btn.classList.add('draggable');
+
+    group.ui.trackGrid.appendChild(btn);
+
+    const track = {
+        id: 't_' + Date.now() + Math.random(),
+        audioElement: audioEl,
+        gainNode: gainNode,
+        uiElement: btn,
+        localPlayhead: trackPlayhead,
+        currentVolume: isFirst ? 1.0 : 0.0,
+        targetVolume: isFirst ? 1.0 : 0.0
+    };
+
+    btn.addEventListener('click', () => handleTrackClick(track));
+    
+    setupTrackDragAndDrop(track);
+    group.tracks.push(track);
+}
+
+function handleTrackClick(track) {
+    if (currentMode !== 'play') return;
+    const group = groups.find(g => g.tracks.includes(track));
+    if (!group) return;
+
+    if (mixMode === 'single') {
+        group.tracks.forEach(t => {
+            t.targetVolume = (t.id === track.id) ? 1.0 : 0.0;
+            t.uiElement.classList.toggle('active', t.id === track.id);
+        });
+    } else {
+        if (track.targetVolume > 0) {
+            track.targetVolume = 0.0;
+            track.uiElement.classList.remove('active');
+        } else {
+            track.targetVolume = 1.0;
+            track.uiElement.classList.add('active');
+        }
+    }
+}
+
+// --- УПРАВЛЕНИЕ ВОСПРОИЗВЕДЕНИЕМ ---
+function toggleGroupPlay(group) {
+    if (!group.isPlaying || group.isFadingOut) playGroup(group);
+    else pauseGroup(group);
+    updateGlobalTransportUI();
+}
+
+function playGroup(group) {
+    initAudio();
+    if (group.tracks.length > 0) {
+        const syncTime = Math.round(group.tracks[0].audioElement.currentTime);
+        group.tracks.forEach(t => t.audioElement.currentTime = syncTime);
+        Promise.all(group.tracks.map(t => t.audioElement.play())).catch(e => console.error(e));
+    }
+    group.targetVolume = 1.0;
+    group.isPlaying = true;
+    group.isFadingOut = false;
+    group.ui.playBtn.textContent = 'Pause';
+    group.ui.playBtn.className = 'transport-btn pause group-play-btn';
+}
+
+function pauseGroup(group) {
+    group.targetVolume = 0.0;
+    group.isFadingOut = true;
+    group.fadeAction = 'pause';
+}
+
+function stopGroup(group) {
+    group.targetVolume = 0.0;
+    group.isFadingOut = true;
+    group.fadeAction = 'stop';
+}
+
+function closeGroup(group) {
+    group.tracks.forEach(t => {
         t.audioElement.pause();
         URL.revokeObjectURL(t.audioElement.src);
     });
-    tracks = [];
-    trackContainer.innerHTML = '';
-    globalPlayhead.style.left = '0%';
-    globalProgressFill.style.width = '0%';
-    cancelAnimationFrame(animationId);
+    group.gainNode.disconnect();
+    group.ui.container.remove();
+    groups = groups.filter(g => g.id !== group.id);
+    updateGlobalTransportUI();
 }
 
-// --- 2. ТРАНСПОРТ (PLAY/PAUSE/STOP) ---
-playPauseBtn.addEventListener('click', () => {
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-
-    if (!isPlaying) {
-        if (tracks.length > 0) {
-            // Округляем до секунды для синхронного старта
-            const syncTime = Math.round(tracks[0].audioElement.currentTime);
-            tracks.forEach(t => t.audioElement.currentTime = syncTime);
-            
-            // Используем Promise.all для максимально синхронного вызова play()
-            Promise.all(tracks.map(t => t.audioElement.play())).catch(e => console.error(e));
-        }
-        
-        isPlaying = true;
-        playPauseBtn.textContent = "Pause";
-        playPauseBtn.className = "transport-btn pause";
-        lastTime = performance.now();
-        requestAnimationFrame(updateVolumes);
-    } else {
-        tracks.forEach(t => t.audioElement.pause());
-        isPlaying = false;
-        playPauseBtn.textContent = "Play";
-        playPauseBtn.className = "transport-btn play";
-    }
+globalPlayBtn.addEventListener('click', () => {
+    const isAnyPlaying = groups.some(g => g.isPlaying && !g.isFadingOut);
+    groups.forEach(g => isAnyPlaying ? pauseGroup(g) : playGroup(g));
+    updateGlobalTransportUI();
 });
 
-stopBtn.addEventListener('click', () => {
-    tracks.forEach(t => {
-        t.audioElement.pause();
-        t.audioElement.currentTime = 0;
-    });
-    isPlaying = false;
-    playPauseBtn.textContent = "Play";
-    playPauseBtn.className = "transport-btn play";
-    updateUI();
+globalStopBtn.addEventListener('click', () => {
+    groups.forEach(g => stopGroup(g));
+    updateGlobalTransportUI();
 });
 
-// --- 3. МИКШИРОВАНИЕ ---
-// Режим "Соло": один активный стем
-function switchTrack(selectedIndex) {
-    tracks.forEach(track => {
-        if (track.id === selectedIndex) {
-            track.targetVolume = 1.0;
-            track.uiElement.classList.add('active');
-        } else {
-            track.targetVolume = 0.0;
-            track.uiElement.classList.remove('active');
-        }
-    });
+function updateGlobalTransportUI() {
+    const isAnyPlaying = groups.some(g => g.isPlaying && !g.isFadingOut);
+    globalPlayBtn.textContent = isAnyPlaying ? 'Pause All' : 'Play All';
+    globalPlayBtn.className = isAnyPlaying ? 'transport-btn pause' : 'transport-btn play';
 }
 
-// Режим "Мульти": вкл/выкл конкретного стема
-function toggleTrack(selectedIndex) {
-    const track = tracks.find(t => t.id === selectedIndex);
-    if (!track) return;
+// --- ОБЩИЙ РЕНДЕР И ЗАТУХАНИЕ ---
+function renderLoop(currentTimeStr) {
+    if (!lastTime) lastTime = currentTimeStr;
+    const deltaTime = (currentTimeStr - lastTime) / 1000;
+    lastTime = currentTimeStr;
 
-    if (track.targetVolume > 0) {
-        track.targetVolume = 0.0;
-        track.uiElement.classList.remove('active');
-    } else {
-        track.targetVolume = 1.0;
-        track.uiElement.classList.add('active');
-    }
-}
-
-function updateVolumes(currentTime) {
-    if (!lastTime) lastTime = currentTime;
-    const deltaTime = (currentTime - lastTime) / 1000;
-    lastTime = currentTime;
-
-    const fadeTime = parseFloat(fadeTimeInput.value) || 2.0;
+    const fadeTime = parseFloat(fadeTimeInput.value) || 1.0;
     const speed = 1.0 / fadeTime;
 
-    tracks.forEach(track => {
-        if (track.currentVolume < track.targetVolume) {
-            track.currentVolume = Math.min(track.currentVolume + speed * deltaTime, track.targetVolume);
-        } else if (track.currentVolume > track.targetVolume) {
-            track.currentVolume = Math.max(track.currentVolume - speed * deltaTime, track.targetVolume);
+    groups.forEach(group => {
+        // 1. Плавный fade in/out для самой группы (Play/Pause/Stop)
+        if (group.currentVolume < group.targetVolume) {
+            group.currentVolume = Math.min(group.currentVolume + speed * deltaTime, group.targetVolume);
+        } else if (group.currentVolume > group.targetVolume) {
+            group.currentVolume = Math.max(group.currentVolume - speed * deltaTime, group.targetVolume);
         }
-        track.gainNode.gain.value = track.currentVolume;
-        track.uiElement.style.setProperty('--vol', `${track.currentVolume * 100}%`);
-    });
+        group.gainNode.gain.value = group.currentVolume;
 
-    if (isPlaying) requestAnimationFrame(updateVolumes);
-}
+        // Если группа затухала и достигла 0 громкости - останавливаем
+        if (group.isFadingOut && group.currentVolume <= 0) {
+            group.tracks.forEach(t => t.audioElement.pause());
+            if (group.fadeAction === 'stop') {
+                group.tracks.forEach(t => t.audioElement.currentTime = 0);
+            }
+            group.isFadingOut = false;
+            group.isPlaying = false;
+            group.ui.playBtn.textContent = 'Play';
+            group.ui.playBtn.className = 'transport-btn play group-play-btn';
+            updateGlobalTransportUI();
+        }
 
-// --- 4. ОБНОВЛЕНИЕ ИНТЕРФЕЙСА (КУРСОРЫ) ---
-function updateUI() {
-    if (tracks.length > 0 && globalDuration > 0) {
-        const currentTime = tracks[0].audioElement.currentTime;
-        const progressPercent = (currentTime / globalDuration) * 100;
-        
-        globalPlayhead.style.left = `${progressPercent}%`;
-        globalProgressFill.style.width = `${progressPercent}%`;
-
-        // Обновляем позицию playhead для всех треков (CSS скрывает его, если класс не 'active')
-        tracks.forEach(t => {
-            t.localPlayhead.style.left = `${progressPercent}%`;
+        // 2. Плавный кроссфейд для треков внутри группы
+        group.tracks.forEach(track => {
+            if (track.currentVolume < track.targetVolume) {
+                track.currentVolume = Math.min(track.currentVolume + speed * deltaTime, track.targetVolume);
+            } else if (track.currentVolume > track.targetVolume) {
+                track.currentVolume = Math.max(track.currentVolume - speed * deltaTime, track.targetVolume);
+            }
+            track.gainNode.gain.value = track.currentVolume;
+            track.uiElement.style.setProperty('--vol', `${track.currentVolume * 100}%`);
         });
 
-        if (currentTime > 0) {
-            stopBtn.disabled = false;
-        } else {
-            stopBtn.disabled = true;
-        }
+        // 3. Обновление UI прогресса
+        if (group.tracks.length > 0 && group.duration > 0) {
+            const time = group.tracks[0].audioElement.currentTime;
+            const progress = (time / group.duration) * 100;
+            
+            group.ui.progressFill.style.width = `${progress}%`;
+            group.ui.progressKnob.style.left = `${progress}%`;
+            
+            group.tracks.forEach(t => t.localPlayhead.style.left = `${progress}%`);
 
-        if (currentTime >= globalDuration) stopBtn.click();
-    }
-    animationId = requestAnimationFrame(updateUI);
+            if (time >= group.duration && group.isPlaying && !group.isFadingOut) {
+                stopGroup(group);
+            }
+        }
+    });
+
+    animationId = requestAnimationFrame(renderLoop);
 }
 
-// --- 5. ПЕРЕМОТКА (СИНХРОННЫЙ SEEKING ПО СЕКУНДАМ) ---
-globalProgressContainer.addEventListener('click', (e) => {
-    if (tracks.length === 0 || globalDuration === 0) return;
-    const rect = globalProgressContainer.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const percentage = Math.max(0, Math.min(1, clickX / rect.width));
-    const newTime = percentage * globalDuration;
-    
-    // Округляем до целой секунды
-    const syncTime = Math.round(newTime);
-    
-    const wasPlaying = isPlaying;
-    if (wasPlaying) {
-        tracks.forEach(t => t.audioElement.pause());
-    }
-    
-    for (let i = 0; i < tracks.length; i++) {
-        tracks[i].audioElement.currentTime = syncTime;
-    }
-    
-    if (wasPlaying) {
-        // Ожидаем резолва всех промисов play для жесткой синхронизации
-        Promise.all(tracks.map(t => t.audioElement.play())).catch(err => console.error("Playback sync error:", err));
-    }
-    
-    updateUI(); 
+// Запускаем единый цикл рендера
+requestAnimationFrame(renderLoop);
+
+// --- ИВЕНТЫ: ЗАГРУЗКА, D&D WINDOWS, НАСТРОЙКИ ---
+fileUpload.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) createGroup(e.target.files);
+    e.target.value = ''; // Сброс инпута
 });
 
-// --- 6. РЕЖИМЫ И НАСТРОЙКИ ---
+addGroupBtn.addEventListener('click', () => createGroup());
+
+const dndOverlay = document.getElementById('dnd-overlay');
+window.addEventListener('dragover', (e) => { e.preventDefault(); dndOverlay.classList.add('active'); });
+window.addEventListener('dragleave', (e) => { if (e.relatedTarget === null) dndOverlay.classList.remove('active'); });
+window.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dndOverlay.classList.remove('active');
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const audioFiles = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('audio/'));
+        if (audioFiles.length > 0) createGroup(audioFiles);
+    }
+});
+
 modePlayBtn.addEventListener('click', () => setMode('play'));
 modeManageBtn.addEventListener('click', () => setMode('manage'));
-
 mixSingleBtn.addEventListener('click', () => setMixMode('single'));
 mixMultiBtn.addEventListener('click', () => setMixMode('multi'));
 
@@ -275,18 +346,15 @@ function setMode(mode) {
     currentMode = mode;
     modePlayBtn.classList.toggle('active', mode === 'play');
     modeManageBtn.classList.toggle('active', mode === 'manage');
-    
     volumeSettings.style.display = (mode === 'play') ? 'flex' : 'none';
     gridSettings.style.display = (mode === 'manage') ? 'flex' : 'none';
     
-    tracks.forEach(t => {
-        t.uiElement.draggable = (mode === 'manage');
-        if (mode === 'manage') {
-            t.uiElement.classList.add('draggable');
-        } else {
-            t.uiElement.classList.remove('draggable');
+    groups.forEach(g => {
+        g.tracks.forEach(t => {
+            t.uiElement.draggable = (mode === 'manage');
+            t.uiElement.classList.toggle('draggable', mode === 'manage');
             t.uiElement.classList.remove('dragging');
-        }
+        });
     });
 }
 
@@ -299,56 +367,91 @@ function setMixMode(mode) {
 volumeInput.addEventListener('input', (e) => {
     const val = parseFloat(e.target.value);
     volumeVal.textContent = `${Math.round(val * 100)}%`;
-    if (masterGainNode) {
-        masterGainNode.gain.value = val;
-    }
+    if (masterGainNode) masterGainNode.gain.value = val;
 });
 
 columnInput.addEventListener('input', (e) => {
     const val = e.target.value;
     columnVal.textContent = val;
-    trackContainer.style.setProperty('--grid-cols', val);
+    document.querySelectorAll('.tracks-grid').forEach(el => el.style.setProperty('--grid-cols', val));
 });
 
-// --- 7. DRAG & DROP ---
-let draggedItem = null;
+// --- DRAG AND DROP (ПЕРЕМЕЩЕНИЕ ТРЕКОВ МЕЖДУ ГРУППАМИ) ---
+let draggedTrack = null;
 
-function setupDragAndDrop(element) {
-    element.addEventListener('dragstart', function() {
-        if (currentMode !== 'manage') return;
-        draggedItem = this;
+function setupTrackDragAndDrop(track) {
+    track.uiElement.addEventListener('dragstart', function(e) {
+        if (currentMode !== 'manage') return e.preventDefault();
+        draggedTrack = track;
         setTimeout(() => this.classList.add('dragging'), 0);
     });
 
-    element.addEventListener('dragend', function() {
+    track.uiElement.addEventListener('dragend', function() {
         this.classList.remove('dragging');
-        draggedItem = null;
-        trackContainer.querySelectorAll('.track-btn').forEach(el => el.classList.remove('drag-over'));
+        draggedTrack = null;
+        document.querySelectorAll('.track-btn').forEach(el => el.classList.remove('drag-over'));
+        document.querySelectorAll('.tracks-grid').forEach(el => el.classList.remove('grid-drag-over'));
     });
 
-    element.addEventListener('dragover', function(e) {
-        e.preventDefault();
-        if (this !== draggedItem && currentMode === 'manage') {
-            this.classList.add('drag-over');
-        }
+    track.uiElement.addEventListener('dragover', function(e) {
+        e.preventDefault(); e.stopPropagation();
+        if (track !== draggedTrack && currentMode === 'manage') this.classList.add('drag-over');
     });
 
-    element.addEventListener('dragleave', function() {
+    track.uiElement.addEventListener('dragleave', function() {
         this.classList.remove('drag-over');
     });
 
-    element.addEventListener('drop', function() {
-        if (this !== draggedItem && currentMode === 'manage') {
+    track.uiElement.addEventListener('drop', function(e) {
+        e.preventDefault(); e.stopPropagation();
+        if (track !== draggedTrack && currentMode === 'manage' && draggedTrack) {
             this.classList.remove('drag-over');
-            const allItems = Array.from(trackContainer.querySelectorAll('.track-btn'));
-            const draggedIdx = allItems.indexOf(draggedItem);
-            const targetIdx = allItems.indexOf(this);
-            
-            if (draggedIdx < targetIdx) {
-                this.after(draggedItem);
-            } else {
-                this.before(draggedItem);
-            }
+            moveTrackToGroup(draggedTrack, this);
         }
     });
+}
+
+function setupGridDragAndDrop(group) {
+    group.ui.trackGrid.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        if (currentMode === 'manage' && draggedTrack) group.ui.trackGrid.classList.add('grid-drag-over');
+    });
+    group.ui.trackGrid.addEventListener('dragleave', () => group.ui.trackGrid.classList.remove('grid-drag-over'));
+    group.ui.trackGrid.addEventListener('drop', (e) => {
+        e.preventDefault();
+        group.ui.trackGrid.classList.remove('grid-drag-over');
+        if (currentMode === 'manage' && draggedTrack) moveTrackToGroup(draggedTrack, null, group);
+    });
+}
+
+function moveTrackToGroup(track, targetElement = null, targetGroupParam = null) {
+    const sourceGroup = groups.find(g => g.tracks.includes(track));
+    const targetGroup = targetGroupParam || groups.find(g => g.tracks.some(t => t.uiElement === targetElement));
+    
+    if (!sourceGroup || !targetGroup) return;
+
+    sourceGroup.tracks = sourceGroup.tracks.filter(t => t.id !== track.id);
+    
+    if (sourceGroup !== targetGroup) {
+        track.gainNode.disconnect();
+        track.gainNode.connect(targetGroup.gainNode);
+        
+        // Синхронизация времени, если целевая группа играет
+        if (targetGroup.isPlaying) {
+            const syncTime = targetGroup.tracks.length > 0 ? targetGroup.tracks[0].audioElement.currentTime : 0;
+            track.audioElement.currentTime = syncTime;
+            track.audioElement.play();
+        } else {
+            track.audioElement.pause();
+        }
+    }
+
+    if (targetElement) {
+        const targetIndex = Array.from(targetGroup.ui.trackGrid.children).indexOf(targetElement);
+        targetGroup.tracks.splice(targetIndex, 0, track);
+        targetGroup.ui.trackGrid.insertBefore(track.uiElement, targetElement);
+    } else {
+        targetGroup.tracks.push(track);
+        targetGroup.ui.trackGrid.appendChild(track.uiElement);
+    }
 }

@@ -3,61 +3,63 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CrossFaderX - Sync & Volume</title>
+    <title>CrossFaderX - Groups & Fade Sync</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <div id="dnd-overlay" class="dnd-overlay">Отпустите файлы для создания группы</div>
+
     <div class="app-container">
         <header class="control-panel">
-            <div class="input-group">
-                <label for="file-upload" class="custom-file-upload">Загрузить стемы</label>
-                <input type="file" id="file-upload" multiple accept="audio/*">
+            <div class="panel-row">
+                <div class="input-group">
+                    <label for="file-upload" class="custom-file-upload">Загрузить стемы</label>
+                    <input type="file" id="file-upload" multiple accept="audio/*">
+                    <button id="add-group-btn" class="custom-btn">Новая группа</button>
+                </div>
+
+                <div class="transport-controls">
+                    <button id="global-stop-btn" class="transport-btn stop">Stop All</button>
+                    <button id="global-play-btn" class="transport-btn play">Play All</button>
+                </div>
+                
+                <div class="input-group">
+                    <label for="fade-time">Кроссфейд (с):</label>
+                    <input type="number" id="fade-time" value="1.0" step="0.1" min="0.1">
+                </div>
+
+                <div class="input-group">
+                    <label>Режим микса:</label>
+                    <div class="mode-switch">
+                        <button id="mix-single" class="mode-btn active">Соло</button>
+                        <button id="mix-multi" class="mode-btn">Мульти</button>
+                    </div>
+                </div>
             </div>
 
-            <div class="transport-controls">
-                <button id="stop-btn" class="transport-btn stop" disabled>Stop</button>
-                <button id="play-pause-btn" class="transport-btn play" disabled>Play</button>
-            </div>
-            
-            <div class="input-group">
-                <label for="fade-time">Кроссфейд (с):</label>
-                <input type="number" id="fade-time" value="2.0" step="0.1" min="0.1">
-            </div>
-
-            <div class="input-group">
-                <label>Режим микса:</label>
+            <div class="panel-row">
                 <div class="mode-switch">
-                    <button id="mix-single" class="mode-btn active">Соло</button>
-                    <button id="mix-multi" class="mode-btn">Мульти</button>
-                </div>
-            </div>
-
-            <div class="dynamic-slider-container">
-                <div id="volume-settings" class="input-group">
-                    <label for="master-volume">Громкость:</label>
-                    <input type="range" id="master-volume" min="0" max="1" step="0.01" value="1">
-                    <span id="volume-val">100%</span>
+                    <button id="mode-play" class="mode-btn active">Слушать</button>
+                    <button id="mode-manage" class="mode-btn">Двигать</button>
                 </div>
 
-                <div id="grid-settings" class="input-group" style="display: none;">
-                    <label for="column-count">Колонки:</label>
-                    <input type="range" id="column-count" min="1" max="10" value="4">
-                    <span id="column-val">4</span>
-                </div>
-            </div>
+                <div class="dynamic-slider-container">
+                    <div id="volume-settings" class="input-group">
+                        <label for="master-volume">Громкость:</label>
+                        <input type="range" id="master-volume" min="0" max="1" step="0.01" value="1">
+                        <span id="volume-val">100%</span>
+                    </div>
 
-            <div class="mode-switch">
-                <button id="mode-play" class="mode-btn active">Слушать</button>
-                <button id="mode-manage" class="mode-btn">Двигать</button>
+                    <div id="grid-settings" class="input-group" style="display: none;">
+                        <label for="column-count">Колонки:</label>
+                        <input type="range" id="column-count" min="1" max="10" value="4">
+                        <span id="column-val">4</span>
+                    </div>
+                </div>
             </div>
         </header>
 
-        <div id="global-progress-container" class="global-progress">
-            <div id="global-progress-fill" class="progress-fill"></div>
-            <div id="global-playhead" class="progress-knob"></div>
-        </div>
-
-        <main id="track-container" class="tracks-grid">
+        <main id="groups-container" class="groups-container">
             </main>
     </div>
 
