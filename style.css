@@ -39,45 +39,27 @@ input[type="file"] { display: none; }
     cursor: pointer;
 }
 
-/* Цвет ползунка громкости (Режим "Слушать") */
-#master-volume {
-    accent-color: #4CAF50; /* Зеленый цвет, как у кнопки Play */
-}
+#master-volume { accent-color: #4CAF50; }
+#column-count { accent-color: #2196F3; }
 
-/* Цвет ползунка колонок (Режим "Двигать") */
-#column-count {
-    accent-color: #2196F3; /* Синий цвет, как у активной кнопки режима */
-}
-
-/* Общие стили для текста значений ползунков */
 #column-val, #volume-val { 
     font-weight: bold; 
-    min-width: 45px; /* Чуть увеличил ширину, чтобы 100% не дергалось */
+    min-width: 45px; 
     text-align: right; 
 }
+#volume-val { color: #4CAF50; }
+#column-val { color: #2196F3; }
 
-/* Цвет процентов громкости (Зеленый) */
-#volume-val { 
-    color: #4CAF50; 
-}
-
-/* Цвет количества колонок (Синий) */
-#column-val { 
-    color: #2196F3; 
-}
-
-/* Переключатель режимов */
+/* Переключатели режимов */
 .mode-switch { display: flex; border: 1px solid #555; border-radius: 13px; overflow: hidden; }
-.mode-btn { padding: 8px 15px; background: #333; color: white; border: none; cursor: pointer; }
+.mode-btn { padding: 8px 15px; background: #333; color: white; border: none; cursor: pointer; transition: background 0.2s;}
 
-/* Индивидуальные цвета для активных режимов */
-#mode-play.active { 
-    background: #4CAF50; /* Зеленый для режима "Слушать" */
-}
+#mode-play.active { background: #4CAF50; }
+#mode-manage.active { background: #2196F3; }
 
-#mode-manage.active { 
-    background: #2196F3; /* Синий для режима "Двигать" */
-}
+/* Стили для Режимов Микса */
+#mix-single.active { background: #9C27B0; } /* Фиолетовый для Соло */
+#mix-multi.active { background: #FF9800; }  /* Оранжевый для Мульти */
 
 /* Главный прогресс-бар */
 .global-progress {
@@ -113,19 +95,16 @@ input[type="file"] { display: none; }
 }
 .track-btn.active { border-color: #4CAF50; }
 
-/* Drag and Drop классы */
 .track-btn.draggable { cursor: grab; }
 .track-btn.draggable:active { cursor: grabbing; }
 .track-btn.dragging { opacity: 0.5; border: 2px dashed #2196F3; }
 .track-btn.drag-over { border-top: 4px solid #2196F3; transform: translateY(2px); }
 
-/* Фон кнопки (Громкость) */
 .track-btn::before {
     content: ''; position: absolute; bottom: 0; left: 0; width: 100%; height: var(--vol, 0%);
     background-color: rgba(76, 175, 80, 0.2); z-index: 1; pointer-events: none;
 }
 
-/* Линия текущей позиции на треке */
 .track-playhead {
     position: absolute; top: 0; left: 0; width: 2px; height: 100%; background: rgba(255, 255, 255, 0.8); 
     z-index: 2; display: none; pointer-events: none; box-shadow: 0 0 4px rgba(0,0,0,0.5);

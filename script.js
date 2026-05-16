@@ -1,9 +1,9 @@
 let audioCtx;
-let masterGainNode; // Общий узел громкости
+let masterGainNode; 
 let tracks = [];
 let isPlaying = false;
 let currentMode = 'play';
-let activeTrackIndex = 0;
+let mixMode = 'single'; // Новый параметр: single или multi
 let lastTime = 0;
 let animationId;
 let globalDuration = 0;
@@ -21,6 +21,9 @@ const globalPlayhead = document.getElementById('global-playhead');
 const modePlayBtn = document.getElementById('mode-play');
 const modeManageBtn = document.getElementById('mode-manage');
 
+const mixSingleBtn = document.getElementById('mix-single');
+const mixMultiBtn = document.getElementById('mix-multi');
+
 // Сменяющиеся элементы
 const gridSettings = document.getElementById('grid-settings');
 const columnInput = document.getElementById('column-count');
@@ -36,7 +39,6 @@ fileUpload.addEventListener('change', function(event) {
 
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        // Создаем мастер-громкость и подключаем к выходу
         masterGainNode = audioCtx.createGain();
         masterGainNode.connect(audioCtx.destination);
         masterGainNode.gain.value = parseFloat(volumeInput.value);
@@ -57,7 +59,6 @@ fileUpload.addEventListener('change', function(event) {
         const trackSource = audioCtx.createMediaElementSource(audioEl);
         const gainNode = audioCtx.createGain();
         
-        // Подключаем: Источник -> Локальная громкость -> Мастер громкость
         trackSource.connect(gainNode);
         gainNode.connect(masterGainNode);
 
@@ -82,7 +83,13 @@ fileUpload.addEventListener('change', function(event) {
         trackContainer.appendChild(btn);
 
         btn.addEventListener('click', () => {
-            if (currentMode === 'play') switchTrack(i);
+            if (currentMode === 'play') {
+                if (mixMode === 'single') {
+                    switchTrack(i);
+                } else {
+                    toggleTrack(i);
+                }
+            }
         });
 
         tracks.push({
@@ -101,7 +108,6 @@ fileUpload.addEventListener('change', function(event) {
     playPauseBtn.disabled = false;
     playPauseBtn.textContent = "Play";
     playPauseBtn.className = "transport-btn play";
-    activeTrackIndex = 0;
     
     requestAnimationFrame(updateUI);
 });
@@ -123,13 +129,13 @@ playPauseBtn.addEventListener('click', () => {
     if (audioCtx.state === 'suspended') audioCtx.resume();
 
     if (!isPlaying) {
-        // Принудительная синхронизация по первому треку при старте
         if (tracks.length > 0) {
-            const syncTime = tracks[0].audioElement.currentTime;
-            tracks.forEach(t => {
-                t.audioElement.currentTime = syncTime;
-                t.audioElement.play();
-            });
+            // Округляем до секунды для синхронного старта
+            const syncTime = Math.round(tracks[0].audioElement.currentTime);
+            tracks.forEach(t => t.audioElement.currentTime = syncTime);
+            
+            // Используем Promise.all для максимально синхронного вызова play()
+            Promise.all(tracks.map(t => t.audioElement.play())).catch(e => console.error(e));
         }
         
         isPlaying = true;
@@ -157,8 +163,8 @@ stopBtn.addEventListener('click', () => {
 });
 
 // --- 3. МИКШИРОВАНИЕ ---
+// Режим "Соло": один активный стем
 function switchTrack(selectedIndex) {
-    activeTrackIndex = selectedIndex;
     tracks.forEach(track => {
         if (track.id === selectedIndex) {
             track.targetVolume = 1.0;
@@ -168,6 +174,20 @@ function switchTrack(selectedIndex) {
             track.uiElement.classList.remove('active');
         }
     });
+}
+
+// Режим "Мульти": вкл/выкл конкретного стема
+function toggleTrack(selectedIndex) {
+    const track = tracks.find(t => t.id === selectedIndex);
+    if (!track) return;
+
+    if (track.targetVolume > 0) {
+        track.targetVolume = 0.0;
+        track.uiElement.classList.remove('active');
+    } else {
+        track.targetVolume = 1.0;
+        track.uiElement.classList.add('active');
+    }
 }
 
 function updateVolumes(currentTime) {
@@ -200,10 +220,9 @@ function updateUI() {
         globalPlayhead.style.left = `${progressPercent}%`;
         globalProgressFill.style.width = `${progressPercent}%`;
 
+        // Обновляем позицию playhead для всех треков (CSS скрывает его, если класс не 'active')
         tracks.forEach(t => {
-            if (t.id === activeTrackIndex) {
-                t.localPlayhead.style.left = `${progressPercent}%`;
-            }
+            t.localPlayhead.style.left = `${progressPercent}%`;
         });
 
         if (currentTime > 0) {
@@ -217,7 +236,7 @@ function updateUI() {
     animationId = requestAnimationFrame(updateUI);
 }
 
-// --- 5. ПЕРЕМОТКА (СИНХРОННЫЙ SEEKING) ---
+// --- 5. ПЕРЕМОТКА (СИНХРОННЫЙ SEEKING ПО СЕКУНДАМ) ---
 globalProgressContainer.addEventListener('click', (e) => {
     if (tracks.length === 0 || globalDuration === 0) return;
     const rect = globalProgressContainer.getBoundingClientRect();
@@ -225,35 +244,38 @@ globalProgressContainer.addEventListener('click', (e) => {
     const percentage = Math.max(0, Math.min(1, clickX / rect.width));
     const newTime = percentage * globalDuration;
     
-    // ВАЖНО: Чтобы избежать рассинхрона, ставим на паузу
+    // Округляем до целой секунды
+    const syncTime = Math.round(newTime);
+    
     const wasPlaying = isPlaying;
     if (wasPlaying) {
         tracks.forEach(t => t.audioElement.pause());
     }
     
-    // Перематываем в тишине
     for (let i = 0; i < tracks.length; i++) {
-        tracks[i].audioElement.currentTime = newTime;
+        tracks[i].audioElement.currentTime = syncTime;
     }
     
-    // Запускаем одновременно, если до этого играло
     if (wasPlaying) {
-        tracks.forEach(t => t.audioElement.play());
+        // Ожидаем резолва всех промисов play для жесткой синхронизации
+        Promise.all(tracks.map(t => t.audioElement.play())).catch(err => console.error("Playback sync error:", err));
     }
     
     updateUI(); 
 });
 
-// --- 6. РЕЖИМЫ И НАСТРОЙКИ (МАСТЕР ГРОМКОСТЬ / СЕТКА) ---
+// --- 6. РЕЖИМЫ И НАСТРОЙКИ ---
 modePlayBtn.addEventListener('click', () => setMode('play'));
 modeManageBtn.addEventListener('click', () => setMode('manage'));
+
+mixSingleBtn.addEventListener('click', () => setMixMode('single'));
+mixMultiBtn.addEventListener('click', () => setMixMode('multi'));
 
 function setMode(mode) {
     currentMode = mode;
     modePlayBtn.classList.toggle('active', mode === 'play');
     modeManageBtn.classList.toggle('active', mode === 'manage');
     
-    // Сменяем ползунки внутри фиксированного блока
     volumeSettings.style.display = (mode === 'play') ? 'flex' : 'none';
     gridSettings.style.display = (mode === 'manage') ? 'flex' : 'none';
     
@@ -268,7 +290,12 @@ function setMode(mode) {
     });
 }
 
-// Управление мастер громкостью
+function setMixMode(mode) {
+    mixMode = mode;
+    mixSingleBtn.classList.toggle('active', mode === 'single');
+    mixMultiBtn.classList.toggle('active', mode === 'multi');
+}
+
 volumeInput.addEventListener('input', (e) => {
     const val = parseFloat(e.target.value);
     volumeVal.textContent = `${Math.round(val * 100)}%`;
@@ -277,7 +304,6 @@ volumeInput.addEventListener('input', (e) => {
     }
 });
 
-// Управление колонками
 columnInput.addEventListener('input', (e) => {
     const val = e.target.value;
     columnVal.textContent = val;
